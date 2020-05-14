@@ -88,6 +88,7 @@ class NodeShell:
                                    chain='mainnet',
                                    rpchost="localhost:8332",
                                    timewait=self.rpc_timeout,
+                                   factor=1.0,
                                    bitcoind=[self.options.bitcoind],
                                    bitcoin_cli=[self.options.bitcoincli],
                                    coverage_dir=self.options.coveragedir,
