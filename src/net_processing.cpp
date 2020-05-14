@@ -3380,7 +3380,10 @@ bool ProcessMessage(CNode* pfrom, const std::string& msg_type, CDataStream& vRec
     }
 
     if (msg_type == NetMsgType::GETCFCHECKPT) {
+        int64_t start_time = GetTimeMicros();
         ProcessGetCFCheckPt(pfrom, vRecv, chainparams, connman);
+        int64_t processing_duration = GetTimeMicros() - start_time;
+        LogPrintf("getcfcheckpt processing took %lldus\n", processing_duration);
         return true;
     }
 
