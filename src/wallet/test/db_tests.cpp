@@ -9,6 +9,7 @@
 #include <fs.h>
 #include <test/util/setup_common.h>
 #include <wallet/bdb.h>
+#include <wallet/sqlite.h>
 
 
 BOOST_FIXTURE_TEST_SUITE(db_tests, BasicTestingSetup)
@@ -67,6 +68,12 @@ BOOST_AUTO_TEST_CASE(getwalletenv_g_dbenvs_free_instance)
 
     BOOST_CHECK(env_1_a != env_1_b);
     BOOST_CHECK(env_2_a == env_2_b);
+}
+
+BOOST_AUTO_TEST_CASE(sqlite_magic)
+{
+    fs::path random_dev = "/tmp/corrupt_wallet";
+    BOOST_CHECK(!IsSQLiteFile(random_dev));
 }
 
 BOOST_AUTO_TEST_SUITE_END()
