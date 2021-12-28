@@ -481,7 +481,7 @@ CNode* CConnman::ConnectNode(CAddress addrConnect, const char *pszDest, bool fCo
         const std::vector<CService> resolved{Lookup(pszDest, default_port, fNameLookup && !HaveNameProxy(), 256)};
         if (!resolved.empty()) {
             const CService& rnd{resolved[GetRand(resolved.size())]};
-            addrConnect = CAddress{MaybeFlipIPv6toCJDNS(rnd), NODE_NONE};
+            addrConnect = CAddress{MaybeFlipIPv6toCJDNS(rnd), addrConnect.nServices};
             if (!addrConnect.IsValid()) {
                 LogPrint(BCLog::NET, "Resolver returned invalid address %s for %s\n", addrConnect.ToStringAddrPort(), pszDest);
                 return nullptr;
@@ -2754,7 +2754,7 @@ std::vector<AddedNodeInfo> CConnman::GetAddedNodeInfo() const
 {
     std::vector<AddedNodeInfo> ret;
 
-    std::list<std::string> lAddresses(0);
+    std::list<AddedNodeParams> lAddresses(0);
     {
         LOCK(m_added_nodes_mutex);
         ret.reserve(m_added_nodes.size());
@@ -2778,9 +2778,9 @@ std::vector<AddedNodeInfo> CConnman::GetAddedNodeInfo() const
         }
     }
 
-    for (const std::string& strAddNode : lAddresses) {
-        CService service(LookupNumeric(strAddNode, GetDefaultPort(strAddNode)));
-        AddedNodeInfo addedNode{strAddNode, CService(), false, false};
+    for (const auto& addr : lAddresses) {
+        CService service(LookupNumeric(addr.m_added_node, GetDefaultPort(addr.m_added_node)));
+        AddedNodeInfo addedNode{addr, CService(), false, false};
         if (service.IsValid()) {
             // strAddNode is an IP:port
             auto it = mapConnected.find(service);
@@ -2791,7 +2791,7 @@ std::vector<AddedNodeInfo> CConnman::GetAddedNodeInfo() const
             }
         } else {
             // strAddNode is a name
-            auto it = mapConnectedByName.find(strAddNode);
+            auto it = mapConnectedByName.find(addr.m_added_node);
             if (it != mapConnectedByName.end()) {
                 addedNode.resolvedAddress = it->second.second;
                 addedNode.fConnected = true;
@@ -2821,7 +2821,12 @@ void CConnman::ThreadOpenAddedConnections()
                 }
                 tried = true;
                 CAddress addr(CService(), NODE_NONE);
-                OpenNetworkConnection(addr, false, &grant, info.strAddedNode.c_str(), ConnectionType::MANUAL);
+
+                if (info.m_params.m_use_v2transport) {
+                    addr.nServices = ServiceFlags(addr.nServices | NODE_P2P_V2);
+                }
+
+                OpenNetworkConnection(addr, false, &grant, info.m_params.m_added_node.c_str(), ConnectionType::MANUAL);
                 if (!interruptNet.sleep_for(std::chrono::milliseconds(500)))
                     return;
             }
@@ -3413,22 +3418,22 @@ std::vector<CAddress> CConnman::GetAddresses(CNode& requestor, size_t max_addres
     return cache_entry.m_addrs_response_cache;
 }
 
-bool CConnman::AddNode(const std::string& strNode)
+bool CConnman::AddNode(const AddedNodeParams& added_node_params)
 {
     LOCK(m_added_nodes_mutex);
-    for (const std::string& it : m_added_nodes) {
-        if (strNode == it) return false;
+    for (const auto& it : m_added_nodes) {
+        if (added_node_params.m_added_node == it.m_added_node) return false;
     }
 
-    m_added_nodes.push_back(strNode);
+    m_added_nodes.push_back(added_node_params);
     return true;
 }
 
 bool CConnman::RemoveAddedNode(const std::string& strNode)
 {
     LOCK(m_added_nodes_mutex);
-    for(std::vector<std::string>::iterator it = m_added_nodes.begin(); it != m_added_nodes.end(); ++it) {
-        if (strNode == *it) {
+    for (auto it = m_added_nodes.begin(); it != m_added_nodes.end(); ++it) {
+        if (strNode == it->m_added_node) {
             m_added_nodes.erase(it);
             return true;
         }
