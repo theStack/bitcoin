@@ -8,6 +8,7 @@
 #include <chainparams.h>
 #include <deploymentstatus.h>
 #include <external_signer.h>
+#include <index/blockfilterindex.h>
 #include <init.h>
 #include <interfaces/chain.h>
 #include <interfaces/handler.h>
@@ -537,6 +538,20 @@ public:
             return fork->nHeight;
         }
         return std::nullopt;
+    }
+    bool haveBlockFilterIndex() override
+    {
+        return GetBlockFilterIndex(BlockFilterType::BASIC) != nullptr;
+    }
+    std::optional<bool> blockFilterMatchesAny(const uint256& block_hash, const GCSFilter::ElementSet& filter_set) override
+    {
+        const BlockFilterIndex* block_filter_index = GetBlockFilterIndex(BlockFilterType::BASIC);
+        if (!block_filter_index) return std::nullopt;
+
+        BlockFilter filter;
+        const CBlockIndex* index = WITH_LOCK(::cs_main, return chainman().m_blockman.LookupBlockIndex(block_hash));
+        if (!block_filter_index->LookupFilter(index, filter)) return std::nullopt;
+        return filter.GetFilter().MatchAny(filter_set);
     }
     bool findBlock(const uint256& hash, const FoundBlock& block) override
     {
