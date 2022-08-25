@@ -260,6 +260,60 @@ std::shared_ptr<CWallet> LoadWalletInternal(WalletContext& context, const std::s
         return nullptr;
     }
 }
+
+class FastWalletRescanFilter
+{
+public:
+    FastWalletRescanFilter(const CWallet& wallet) : m_wallet(wallet)
+    {
+        // fast rescanning via block filters is only supported by descriptor wallets right now
+        assert(!m_wallet.IsLegacy());
+
+        // create initial filter with scripts from both active and non-active ScriptPubKeyMans
+        auto active_spkms = m_wallet.GetActiveScriptPubKeyMans();
+        for (auto spkm : m_wallet.GetAllScriptPubKeyMans()) {
+            auto* desc_spkm = dynamic_cast<DescriptorScriptPubKeyMan*>(spkm);
+            for (const auto& script_pub_key : desc_spkm->GetScriptPubKeys()) {
+                m_filter_set.emplace(script_pub_key.begin(), script_pub_key.end());
+            }
+            // save active ScriptPubKeyMans's end ranges for possible future filter updates
+            if (active_spkms.find(spkm) != active_spkms.end()) {
+                m_last_range_ends.emplace(desc_spkm, GetDescriptorSPKRangeEnd(*desc_spkm));
+            }
+        }
+    }
+
+    void UpdateIfNeeded()
+    {
+        // repopulate filter with new scripts if top-up has happened since last iteration
+        for (auto [desc_spkm, last_range_end] : m_last_range_ends) {
+            int32_t current_range_end = GetDescriptorSPKRangeEnd(*desc_spkm);
+            if (current_range_end > last_range_end) {
+                for (const auto& script_pub_key : desc_spkm->GetScriptPubKeys(last_range_end)) {
+                    m_filter_set.emplace(script_pub_key.begin(), script_pub_key.end());
+                }
+                m_last_range_ends.at(desc_spkm) = current_range_end;
+            }
+        }
+    }
+
+    std::optional<bool> MatchesBlock(const uint256& block_hash) const
+    {
+        return m_wallet.chain().blockFilterMatchesAny(block_hash, m_filter_set);
+    }
+
+private:
+    const CWallet& m_wallet;
+    std::map<const DescriptorScriptPubKeyMan*, int32_t> m_last_range_ends;
+    GCSFilter::ElementSet m_filter_set;
+
+    static int32_t GetDescriptorSPKRangeEnd(const DescriptorScriptPubKeyMan& desc_spkm)
+    {
+        LOCK(desc_spkm.cs_desc_man);
+        return desc_spkm.GetWalletDescriptor().range_end;
+    }
+
+};
 } // namespace
 
 std::shared_ptr<CWallet> LoadWallet(WalletContext& context, const std::string& name, std::optional<bool> load_on_start, const DatabaseOptions& options, DatabaseStatus& status, bilingual_str& error, std::vector<bilingual_str>& warnings)
