@@ -2327,14 +2327,14 @@ const WalletDescriptor DescriptorScriptPubKeyMan::GetWalletDescriptor() const
     return m_wallet_descriptor;
 }
 
-const std::vector<CScript> DescriptorScriptPubKeyMan::GetScriptPubKeys() const
+const std::vector<CScript> DescriptorScriptPubKeyMan::GetScriptPubKeys(int32_t minimum_index) const
 {
     LOCK(cs_desc_man);
     std::vector<CScript> script_pub_keys;
     script_pub_keys.reserve(m_map_script_pub_keys.size());
 
-    for (auto const& script_pub_key: m_map_script_pub_keys) {
-        script_pub_keys.push_back(script_pub_key.first);
+    for (auto const& [script_pub_key, index] : m_map_script_pub_keys) {
+        if (index >= minimum_index) script_pub_keys.push_back(script_pub_key);
     }
     return script_pub_keys;
 }
