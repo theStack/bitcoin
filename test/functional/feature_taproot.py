@@ -102,7 +102,7 @@ from test_framework.key import (
     sign_schnorr,
     tweak_add_privkey,
     ECKey,
-    SECP256K1
+    GE
 )
 from test_framework.address import (
     hash160,
@@ -694,7 +694,7 @@ def spenders_taproot_active():
     # Generate an invalid public key
     while True:
         invalid_pub = random_bytes(32)
-        if not SECP256K1.is_x_coord(int.from_bytes(invalid_pub, 'big')):
+        if not GE.is_valid_x(int.from_bytes(invalid_pub, 'big')):
             break
 
     # Implement a test case that detects validation logic which maps invalid public keys to the

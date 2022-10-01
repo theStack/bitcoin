@@ -16,6 +16,7 @@ import random
 import re
 import time
 import unittest
+import sys
 
 from . import coverage
 from .authproxy import AuthServiceProxy, JSONRPCException
@@ -542,7 +543,12 @@ def modinv(a, n):
     """Compute the modular inverse of a modulo n using the extended Euclidean
     Algorithm. See https://en.wikipedia.org/wiki/Extended_Euclidean_algorithm#Modular_integers.
     """
-    # TODO: Change to pow(a, -1, n) available in Python 3.8
+    a = a % n
+    if a == 0:
+        return 0
+    if sys.hexversion >= 0x3080000:
+        # More efficient version available in Python 3.8.
+        return pow(a, -1, n)
     t1, t2 = 0, 1
     r1, r2 = n, a
     while r2 != 0:
