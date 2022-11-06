@@ -798,6 +798,14 @@ DBErrors WalletBatch::LoadWallet(CWallet* pwallet)
             }
         }
 
+        // For descriptor wallets, ignore legacy key types
+        KeyFilterFn filter_fn{nullptr};
+        if (pwallet->IsWalletFlagSet(WALLET_FLAG_DESCRIPTORS)) {
+            filter_fn = [](const std::string& strType) {
+                return DBKeys::LEGACY_TYPES.count(strType) == 0;
+            };
+        }
+
 #ifndef ENABLE_EXTERNAL_SIGNER
         if (pwallet->IsWalletFlagSet(WALLET_FLAG_EXTERNAL_SIGNER)) {
             pwallet->WalletLogPrintf("Error: External signer wallet being loaded without external signer support compiled\n");
@@ -831,7 +839,7 @@ DBErrors WalletBatch::LoadWallet(CWallet* pwallet)
 
             // Try to be tolerant of single corrupt records:
             std::string strType, strErr;
-            if (!ReadKeyValue(pwallet, ssKey, ssValue, wss, strType, strErr))
+            if (!ReadKeyValue(pwallet, ssKey, ssValue, wss, strType, strErr, filter_fn))
             {
                 // losing keys is considered a catastrophic error, anything else
                 // we assume the user can live with:
