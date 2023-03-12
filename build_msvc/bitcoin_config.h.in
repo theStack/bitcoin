@@ -41,7 +41,7 @@
 /* Define to 1 to enable ZMQ functions */
 #define ENABLE_ZMQ 1
 
-/* define if external signer support is enabled (requires Boost::Process) */
+/* define if external signer support is enabled */
 #define ENABLE_EXTERNAL_SIGNER /**/
 
 /* Define this symbol if the consensus lib has been built */
