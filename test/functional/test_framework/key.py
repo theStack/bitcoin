@@ -233,6 +233,8 @@ class GE:
 
     def __mul__(self, a):
         """Multiply a point with an integer (scalar multiplication)."""
+        if self == SECP256K1_G:  # optimize generator multiplication using precomputed data
+            return fast_g.mul(a)
         r = None
         for i in range(a.bit_length() - 1, -1, -1):
             if r is not None:
@@ -595,6 +597,31 @@ def sign_schnorr(key, msg, aux=None, flip_p=False, flip_r=False):
     k = kp if R.y.is_even() != flip_r else GE.ORDER - kp
     e = int.from_bytes(TaggedHash("BIP0340/challenge", R.to_bytes_xonly() + P.to_bytes_xonly() + msg), 'big') % GE.ORDER
     return R.to_bytes_xonly() + ((k + e * sec) % GE.ORDER).to_bytes(32, 'big')
+
+
+class FastG:
+    """Speed up scalar multiplication with the generator point G
+       by using a precomputed lookup table with its powers of 2:
+       g_table = [G, G*2, G*4, G*(2^3), G*(2^4), ..., G*(2^255)]
+       The points corresponding to each bit set in the scalar are
+       added up, i.e. on average ~128 point additions take place.
+    """
+    def __init__(self):
+        self.g_table = []  # g_table[i] = G * (2^i)
+        g_i = SECP256K1_G
+        for bit in range(256):
+            self.g_table.append(g_i)
+            g_i = g_i.double()
+
+    def mul(self, a):
+        result = None
+        for bit in range(a.bit_length()):
+            if (a & (1 << bit)):
+                result += self.g_table[bit]
+        return result
+
+fast_g = FastG()
+
 
 class TestFrameworkKey(unittest.TestCase):
     def test_schnorr(self):
