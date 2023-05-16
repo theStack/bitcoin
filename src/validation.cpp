@@ -2066,6 +2066,7 @@ static SteadyClock::duration time_undo{};
 static SteadyClock::duration time_index{};
 static SteadyClock::duration time_total{};
 static int64_t num_blocks_total = 0;
+static uint64_t num_outputs_total = 0;
 
 /** Apply the effects of this block (with given index) on the UTXO set represented by coins.
  *  Validity checks that depend on the UTXO set are also done; ConnectBlock()
@@ -2341,7 +2342,11 @@ bool Chainstate::ConnectBlock(const CBlock& block, BlockValidationState& state, 
             blockundo.vtxundo.push_back(CTxUndo());
         }
         UpdateCoins(tx, view, i == 0 ? undoDummy : blockundo.vtxundo.back(), pindex->nHeight);
+        num_outputs_total += tx.vout.size();
     }
+    // display total number of outputs every 1/(4*12) halving interval (that is approx. every month)
+    if (pindex->nHeight % 4375 == 0) LogPrintf("Block %d (%s): %d TXOs in total\n", pindex->nHeight, FormatISO8601DateTime(pindex->GetBlockTime()), num_outputs_total);
+
     const auto time_3{SteadyClock::now()};
     time_connect += time_3 - time_2;
     LogPrint(BCLog::BENCH, "      - Connect %u transactions: %.2fms (%.3fms/tx, %.3fms/txin) [%.2fs (%.2fms/blk)]\n", (unsigned)block.vtx.size(),
@@ -2626,6 +2631,8 @@ static void UpdateTipLog(
 {
 
     AssertLockHeld(::cs_main);
+
+    /*
     LogPrintf("%s%s: new best=%s height=%d version=0x%08x log2_work=%f tx=%lu date='%s' progress=%f cache=%.1fMiB(%utxo)%s\n",
         prefix, func_name,
         tip->GetBlockHash().ToString(), tip->nHeight, tip->nVersion,
@@ -2635,6 +2642,7 @@ static void UpdateTipLog(
         coins_tip.DynamicMemoryUsage() * (1.0 / (1 << 20)),
         coins_tip.GetCacheSize(),
         !warning_messages.empty() ? strprintf(" warning='%s'", warning_messages) : "");
+    */
 }
 
 void Chainstate::UpdateTip(const CBlockIndex* pindexNew)
