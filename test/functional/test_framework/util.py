@@ -554,3 +554,31 @@ def find_vout_for_address(node, txid, addr):
         if addr == tx["vout"][i]["scriptPubKey"]["address"]:
             return i
     raise RuntimeError("Vout not found for address: txid=%s, addr=%s" % (txid, addr))
+
+
+def get_blockfile_info(node, blockfile_number):
+    from .script import CScript
+    from .messages import CBlock, from_binary
+    from .p2p import MAGIC_BYTES
+    blkfile_path = os.path.join(node.datadir, node.chain, "blocks", f"blk{blockfile_number:05}.dat")
+    if not os.path.isfile(blkfile_path):
+        return None
+    block_heights = []
+    with open(blkfile_path, "rb") as f:
+        while True:
+            netmagic = f.read(4)
+            if len(netmagic) == 0 or int.from_bytes(netmagic, 'little') == 0:
+                break
+            assert_equal(netmagic, MAGIC_BYTES[node.chain])
+            blklen = int.from_bytes(f.read(4), 'little')
+            blkdata = f.read(blklen)
+            block = from_binary(CBlock, blkdata)
+            # all network's genesis blocks share the same merkle root
+            if block.hashMerkleRoot == int.from_bytes(bytes.fromhex("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b")[::-1], 'little'):
+                block_heights.append(0)
+                continue
+            coinbase_scriptSig_push = next(iter(CScript(block.vtx[0].vin[0].scriptSig)))
+            if type(coinbase_scriptSig_push) != int:
+                coinbase_scriptSig_push = int.from_bytes(coinbase_scriptSig_push, 'little')
+            block_heights.append(coinbase_scriptSig_push)
+    return min(block_heights), max(block_heights)
