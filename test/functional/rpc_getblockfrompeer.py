@@ -19,6 +19,7 @@ from test_framework.test_framework import BitcoinTestFramework
 from test_framework.util import (
     assert_equal,
     assert_raises_rpc_error,
+    get_blockfile_info,
 )
 
 
@@ -124,6 +125,7 @@ class GetBlockFromPeerTest(BitcoinTestFramework):
         # We need to generate more blocks to be able to prune
         self.generate(self.nodes[0], 400, sync_fun=self.no_op)
         self.sync_blocks([self.nodes[0], pruned_node])
+        print(f"blockfile0 range: {get_blockfile_info(pruned_node, 0)}")
         pruneheight = pruned_node.pruneblockchain(300)
         assert_equal(pruneheight, 248)
         # Ensure the block is actually pruned
@@ -142,6 +144,7 @@ class GetBlockFromPeerTest(BitcoinTestFramework):
         self.generate(self.nodes[0], 250, sync_fun=self.no_op)
         self.sync_blocks([self.nodes[0], pruned_node])
         pruneheight += 251
+        print(f"blockfile1 range: {get_blockfile_info(pruned_node, 1)}")
         assert_equal(pruned_node.pruneblockchain(700), pruneheight)
         assert_equal(pruned_node.getblock(pruned_block)["hash"], "36c56c5b5ebbaf90d76b0d1a074dcb32d42abab75b7ec6fa0ffd9b4fbce8f0f7")
 
@@ -149,6 +152,7 @@ class GetBlockFromPeerTest(BitcoinTestFramework):
         self.generate(self.nodes[0], 250, sync_fun=self.no_op)
         self.sync_blocks([self.nodes[0], pruned_node])
         pruneheight += 250
+        print(f"blockfile2 range: {get_blockfile_info(pruned_node, 2)}")
         assert_equal(pruned_node.pruneblockchain(1000), pruneheight)
         assert_raises_rpc_error(-1, "Block not available (pruned data)", pruned_node.getblock, pruned_block)
 
