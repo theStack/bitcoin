@@ -7,6 +7,8 @@
 WARNING: This code is slow and uses bad randomness.
 Do not use for anything but tests."""
 
+import csv
+import os
 import random
 import unittest
 
@@ -104,6 +106,21 @@ class TestFrameworkEllSwift(unittest.TestCase):
         for u, t in undefined_inputs:
             x = xswiftec(u, t)
             self.assertTrue(GE.is_valid_x(x))
+
+    def test_elligator_decode_testvectors(self):
+        vectors_file = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'ellswift_decode_test_vectors.csv')
+        with open(vectors_file, newline='', encoding='utf8') as csvfile:
+            reader = csv.reader(csvfile)
+            next(reader)
+            for (encoding_hex, xcoord_hex, comment) in reader:
+                encoding = bytes.fromhex(encoding_hex)
+                assert len(encoding) == 64
+                expected_xcoord = FE(int(xcoord_hex, 16))
+                u = FE(int.from_bytes(encoding[:32], 'big'))
+                t = FE(int.from_bytes(encoding[32:], 'big'))
+                x = xswiftec(u, t)
+                self.assertEqual(x, expected_xcoord)
+                self.assertTrue(GE.is_valid_x(x))
 
     def test_elligator_roundtrip(self):
         """Verify that encoding using xelligatorswift decodes back using xswiftec."""
