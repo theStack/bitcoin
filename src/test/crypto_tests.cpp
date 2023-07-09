@@ -131,13 +131,14 @@ static void TestAES256CBC(const std::string &hexkey, const std::string &hexiv, b
     }
 }
 
-static void TestChaCha20(const std::string &hex_message, const std::string &hexkey, ChaCha20::Nonce96 nonce, uint32_t seek, const std::string& hexout)
+static void TestChaCha20(const std::string &hex_message, const std::string &hexkey, ChaCha20::Nonce96 nonce, uint32_t seek, const std::string& hexout, bool check_block_pos_overflow=false)
 {
     std::vector<unsigned char> key = ParseHex(hexkey);
     assert(key.size() == 32);
     std::vector<unsigned char> m = ParseHex(hex_message);
     ChaCha20 rng(key.data());
     rng.Seek64(nonce, seek);
+    uint32_t first_nonce_before = rng.GetFirstNoncePart();
     std::vector<unsigned char> outres;
     outres.resize(hexout.size() / 2);
     assert(hex_message.empty() || m.size() * 2 == hexout.size());
@@ -179,6 +180,10 @@ static void TestChaCha20(const std::string &hex_message, const std::string &hexk
             pos += lens[j];
         }
         BOOST_CHECK_EQUAL(hexout, HexStr(outres));
+    }
+    if (check_block_pos_overflow) {
+        uint32_t first_nonce_after = rng.GetFirstNoncePart();
+        BOOST_CHECK_EQUAL(first_nonce_after, first_nonce_before + 1);
     }
 }
 
@@ -662,7 +667,8 @@ BOOST_AUTO_TEST_CASE(chacha20_testvector)
                  "2d292c880513397b91221c3a647cfb0765a4815894715f411e3df5e0dd0ba9df"
                  "fd565dea5addbdb914208fde7950f23e0385f9a727143f6a6ac51d84b1c0fb3e"
                  "2e3b00b63d6841a1cc6d1538b1d3a74bef1eb2f54c7b7281e36e484dba89b351"
-                 "c8f572617e61e342879f211b0e4c515df50ea9d0771518fad96cd0baee62deb6");
+                 "c8f572617e61e342879f211b0e4c515df50ea9d0771518fad96cd0baee62deb6",
+                 /*check_block_pos_overflow=*/ true);
 }
 
 BOOST_AUTO_TEST_CASE(chacha20_midblock)

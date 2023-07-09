@@ -56,6 +56,9 @@ public:
      *  Used for encryption and decryption (XOR)
      */
     void Crypt64(const unsigned char* input, unsigned char* output, size_t blocks);
+
+    /* Test-only */
+    uint32_t GetFirstNoncePart() { return input[9]; }
 };
 
 /** Unrestricted ChaCha20 cipher. */
@@ -96,6 +99,9 @@ public:
      *  Used for encryption and decryption (XOR)
      */
     void Crypt(const unsigned char* input, unsigned char* output, size_t bytes);
+
+    /* Test-only */
+    uint32_t GetFirstNoncePart() { return m_aligned.GetFirstNoncePart(); }
 };
 
 #endif // BITCOIN_CRYPTO_CHACHA20_H
