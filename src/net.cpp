@@ -676,6 +676,9 @@ void CNode::CopyStats(CNodeStats& stats)
         LOCK(cs_vRecv);
         X(mapRecvBytesPerMsgType);
         X(nRecvBytes);
+        Transport::Info info = m_transport->GetInfo();
+        stats.m_transport_type = info.transport_type;
+        if (info.session_id) stats.m_session_id = HexStr(*info.session_id);
     }
     X(m_permission_flags);
 
@@ -741,6 +744,11 @@ V1Transport::V1Transport(const NodeId node_id, int nTypeIn, int nVersionIn) noex
     m_magic_bytes = Params().MessageStart();
     LOCK(m_recv_mutex);
     Reset();
+}
+
+Transport::Info V1Transport::GetInfo() const noexcept
+{
+    return {.transport_type = TransportProtocolType::V1, .session_id = {}};
 }
 
 int V1Transport::readHeader(Span<const uint8_t> msg_bytes)
@@ -1615,6 +1623,28 @@ size_t V2Transport::GetSendMemoryUsage() const noexcept
     if (m_send_state == SendState::V1) return m_v1_fallback.GetSendMemoryUsage();
 
     return sizeof(m_send_buffer) + memusage::DynamicUsage(m_send_buffer);
+}
+
+Transport::Info V2Transport::GetInfo() const noexcept
+{
+    AssertLockNotHeld(m_recv_mutex);
+    LOCK(m_recv_mutex);
+    if (m_recv_state == RecvState::V1) return m_v1_fallback.GetInfo();
+
+    Transport::Info info;
+
+    // Report DETECTING as transport type if we don't know whether the peer is V1 or V2.
+    info.transport_type = m_recv_state ==
+        RecvState::KEY_MAYBE_V1 ? TransportProtocolType::DETECTING : TransportProtocolType::V2;
+
+    // Do not report the session ID until the garbage authentication packet has been received and
+    // verified (confirming that the other side very likely has the same keys as us).
+    if (m_recv_state != RecvState::KEY_MAYBE_V1 && m_recv_state != RecvState::KEY &&
+        m_recv_state != RecvState::GARB_GARBTERM && m_recv_state != RecvState::GARBAUTH) {
+        info.session_id = uint256(MakeUCharSpan(m_cipher.GetSessionID()));
+    }
+
+    return info;
 }
 
 std::pair<size_t, bool> CConnman::SocketSendData(CNode& node) const
