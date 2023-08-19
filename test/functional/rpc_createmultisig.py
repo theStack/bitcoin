@@ -13,6 +13,7 @@ from test_framework.blocktools import COINBASE_MATURITY
 from test_framework.authproxy import JSONRPCException
 from test_framework.descriptors import descsum_create, drop_origins
 from test_framework.key import ECPubKey
+from test_framework.messages import COIN
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.util import (
     assert_raises_rpc_error,
@@ -194,19 +195,14 @@ class RpcCreateMultiSigTest(BitcoinTestFramework):
             wmulti.unloadwallet()
 
         spk = address_to_scriptpubkey(madd)
-        txid = self.wallet.send_to(from_node=self.nodes[0], scriptPubKey=spk, amount=1300)["txid"]
-        tx = node0.getrawtransaction(txid, True)
-        vout = [v["n"] for v in tx["vout"] if madd == v["scriptPubKey"]["address"]]
-        assert len(vout) == 1
-        vout = vout[0]
-        scriptPubKey = tx["vout"][vout]["scriptPubKey"]["hex"]
-        value = tx["vout"][vout]["value"]
-        prevtxs = [{"txid": txid, "vout": vout, "scriptPubKey": scriptPubKey, "redeemScript": mredeem, "amount": value}]
+        value = decimal.Decimal("0.00001300")
+        tx = self.wallet.send_to(from_node=self.nodes[0], scriptPubKey=spk, amount=int(value * COIN))
+        prevtxs = [{"txid": tx["txid"], "vout": tx["sent_vout"], "scriptPubKey": spk.hex(), "redeemScript": mredeem, "amount": value}]
 
         self.generate(node0, 1)
 
         outval = value - decimal.Decimal("0.00001000")
-        rawtx = node2.createrawtransaction([{"txid": txid, "vout": vout}], [{self.final: outval}])
+        rawtx = node2.createrawtransaction([{"txid": tx["txid"], "vout": tx["sent_vout"]}], [{self.final: outval}])
 
         prevtx_err = dict(prevtxs[0])
         del prevtx_err["redeemScript"]
