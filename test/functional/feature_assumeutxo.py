@@ -33,6 +33,8 @@ Interesting starting states could be loading a snapshot when the current chain t
 - TODO: Not an ancestor or a descendant of the snapshot block and has more work
 
 """
+from shutil import rmtree
+
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.util import (
     assert_equal,
@@ -99,6 +101,23 @@ class AssumeutxoTest(BitcoinTestFramework):
         with self.nodes[1].assert_debug_log([expected_log]):
             assert_raises_rpc_error(-32603, "Unable to load UTXO snapshot", self.nodes[1].loadtxoutset, bad_snapshot_path)
 
+    def test_invalid_chainstate_scenarios(self):
+        self.log.info("Test different scenarios of invalid snapshot chainstate in datadir")
+
+        self.log.info("  - snapshot chainstate refering to a block that is not in the assumeutxo parameters")
+        self.stop_node(0)
+        chainstate_snapshot_path = self.nodes[0].chain_path / "chainstate_snapshot"
+        chainstate_snapshot_path.mkdir()
+        invalid_hash = bytes(list(range(32)))
+        with open(chainstate_snapshot_path / "base_blockhash", 'wb') as f:
+            f.write(invalid_hash[::-1])
+        expected_error = f"Error: Assumeutxo data not found for the given blockhash '{invalid_hash.hex()}'."
+        self.nodes[0].assert_start_raises_init_error(expected_msg=expected_error)
+
+        # resurrect node again
+        rmtree(chainstate_snapshot_path)
+        self.start_node(0)
+
     def run_test(self):
         """
         Bring up two (disconnected) nodes, mine some new blocks on the first,
@@ -158,6 +177,7 @@ class AssumeutxoTest(BitcoinTestFramework):
         assert_equal(n0.getblockchaininfo()["blocks"], FINAL_HEIGHT)
 
         self.test_invalid_snapshot_scenarios(dump_output['path'])
+        self.test_invalid_chainstate_scenarios()
 
         self.log.info(f"Loading snapshot into second node from {dump_output['path']}")
         loaded = n1.loadtxoutset(dump_output['path'])
