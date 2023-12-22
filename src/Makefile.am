@@ -126,6 +126,7 @@ BITCOIN_CORE_H = \
   base58.h \
   bech32.h \
   bip324.h \
+  bip352.h \
   blockencodings.h \
   blockfilter.h \
   chain.h \
@@ -382,6 +383,7 @@ libbitcoin_node_a_SOURCES = \
   addrman.cpp \
   banman.cpp \
   bip324.cpp \
+  bip352.cpp \
   blockencodings.cpp \
   blockfilter.cpp \
   chain.cpp \
