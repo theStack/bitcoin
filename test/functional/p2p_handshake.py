@@ -11,6 +11,7 @@ from test_framework.test_framework import BitcoinTestFramework
 from test_framework.messages import (
     NODE_NETWORK,
     NODE_NONE,
+    NODE_P2P_V2,
     NODE_WITNESS,
 )
 from test_framework.p2p import P2PInterface
@@ -26,7 +27,8 @@ class P2PHandshakeTest(BitcoinTestFramework):
     def check_outbound_disconnect(self, node, p2p_idx, connection_type, services):
         node.add_outbound_p2p_connection(
             P2PInterface(), p2p_idx=p2p_idx, wait_for_disconnect=True,
-            connection_type=connection_type, services=services)
+            connection_type=connection_type, services=services,
+            supports_v2_p2p=self.options.v2transport, advertise_v2_p2p=self.options.v2transport)
 
     def run_test(self):
         node = self.nodes[0]
@@ -34,8 +36,9 @@ class P2PHandshakeTest(BitcoinTestFramework):
         for i, conn_type in enumerate(["outbound-full-relay", "block-relay-only", "addr-fetch"]):
             services = random.choice([NODE_NONE, NODE_NETWORK, NODE_WITNESS])
             assert (services & DESIRABLE_SERVICE_FLAGS) != DESIRABLE_SERVICE_FLAGS
+            offered_services = services | (NODE_P2P_V2 if self.options.v2transport else 0)
             expected_debug_log = f'peer={i} does not offer the expected services ' \
-                    f'({services:08x} offered, {DESIRABLE_SERVICE_FLAGS:08x} expected)'
+                    f'({offered_services:08x} offered, {DESIRABLE_SERVICE_FLAGS:08x} expected)'
             self.log.info(f'    - services 0x{services:08x}, type "{conn_type}"')
             with node.assert_debug_log([expected_debug_log]):
                 self.check_outbound_disconnect(node, i, conn_type, services)
