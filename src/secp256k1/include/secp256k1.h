@@ -916,6 +916,18 @@ SECP256K1_API void secp256k1_internals_scalar_set_b32(secp256k1_internals_scalar
 SECP256K1_API void secp256k1_internals_scalar_get_b32(unsigned char *bin, const secp256k1_internals_scalar* a);
 SECP256K1_API int secp256k1_internals_scalar_add(secp256k1_internals_scalar *r, const secp256k1_internals_scalar *a, const secp256k1_internals_scalar *b);
 
+/* Caller is responsible for allocating a maximally-aligned space of size
+   secp256k1_internals_point_size */
+typedef struct secp256k1_internals_point_struct secp256k1_internals_point;
+
+SECP256K1_API size_t secp256k1_internals_point_size(void);
+SECP256K1_API int secp256k1_internals_point_parse_legacy(secp256k1_internals_point *r, const unsigned char *raw_legacy_pubkey33);
+SECP256K1_API int secp256k1_internals_point_parse_xonly(secp256k1_internals_point *r, const unsigned char *raw_xonly_pubkey32);
+SECP256K1_API void secp256k1_internals_point_serialize_legacy(unsigned char *raw_legacy_pubkey33, secp256k1_internals_point *a);
+SECP256K1_API void secp256k1_internals_point_serialize_xonly(unsigned char *raw_xonly_pubkey32, secp256k1_internals_point *a);
+SECP256K1_API void secp256k1_internals_point_negate(secp256k1_internals_point *r);
+SECP256K1_API void secp256k1_internals_point_add(secp256k1_internals_point *r, const secp256k1_internals_point *a, secp256k1_internals_point *b);
+
 #ifdef __cplusplus
 }
 #endif

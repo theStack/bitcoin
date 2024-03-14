@@ -821,6 +821,7 @@ int secp256k1_tagged_sha256(const secp256k1_context* ctx, unsigned char *hash32,
 /** INTERNALS / HAZMAT functions (proof-of-concept) **/
 /*****************************************************/
 
+/* scalar */
 struct secp256k1_internals_scalar_struct {
     secp256k1_scalar s;
 };
@@ -839,4 +840,83 @@ void secp256k1_internals_scalar_get_b32(unsigned char *bin, const secp256k1_inte
 
 int secp256k1_internals_scalar_add(secp256k1_internals_scalar *r, const secp256k1_internals_scalar *a, const secp256k1_internals_scalar *b) {
     return secp256k1_scalar_add(&r->s, &a->s, &b->s);
+}
+
+/* point */
+struct secp256k1_internals_point_struct {
+    secp256k1_gej gej;
+    int z_is_one; /* set if z == 1, i.e. gej can be converted to ge trivially by assigning x/y */
+};
+
+size_t secp256k1_internals_point_size(void) {
+    return sizeof(struct secp256k1_internals_point_struct);
+}
+
+static void internals_point_to_ge(secp256k1_ge *ge, secp256k1_internals_point* a) {
+    if (a->z_is_one) {
+        secp256k1_ge_set_xy(ge, &a->gej.x, &a->gej.y);
+    } else {
+        secp256k1_ge_set_gej(ge, &a->gej);
+        a->z_is_one = 1;
+    }
+}
+
+int secp256k1_internals_point_parse_legacy(secp256k1_internals_point *r, const unsigned char *raw_legacy_pubkey33) {
+    secp256k1_ge result;
+    if (!secp256k1_eckey_pubkey_parse(&result, raw_legacy_pubkey33, 33)) {
+        return 0;
+    }
+    secp256k1_gej_set_ge(&r->gej, &result);
+    r->z_is_one = 1;
+    return 1;
+}
+
+int secp256k1_internals_point_parse_xonly(secp256k1_internals_point *r, const unsigned char *raw_xonly_pubkey32) {
+    /* basically a copy of secp256k1_xonly_pubkey_parse, w/o the conversion to secp256k1_xonly_pubkey */
+    secp256k1_ge pk;
+    secp256k1_fe x;
+
+    if (!secp256k1_fe_set_b32_limit(&x, raw_xonly_pubkey32)) {
+        return 0;
+    }
+    if (!secp256k1_ge_set_xo_var(&pk, &x, 0)) {
+        return 0;
+    }
+    if (!secp256k1_ge_is_in_correct_subgroup(&pk)) {
+        return 0;
+    }
+    secp256k1_gej_set_ge(&r->gej, &pk);
+    r->z_is_one = 1;
+    return 1;
+}
+
+void secp256k1_internals_point_serialize_legacy(unsigned char *raw_legacy_pubkey33, secp256k1_internals_point *a) {
+    secp256k1_ge pk;
+    size_t outsize;
+
+    internals_point_to_ge(&pk, a);
+    /* TODO: check return value? (can only fail if pk is infinity) */
+    secp256k1_eckey_pubkey_serialize(&pk, raw_legacy_pubkey33, &outsize, 1);
+}
+
+void secp256k1_internals_point_serialize_xonly(unsigned char *raw_xonly_pubkey32, secp256k1_internals_point *a) {
+    secp256k1_ge pk;
+    internals_point_to_ge(&pk, a);
+    secp256k1_fe_get_b32(raw_xonly_pubkey32, &pk.x);
+}
+
+void secp256k1_internals_point_negate(secp256k1_internals_point *r) {
+    secp256k1_ge pk;
+
+    internals_point_to_ge(&pk, r);
+    secp256k1_ge_neg(&pk, &pk);
+    secp256k1_gej_set_ge(&r->gej, &pk);
+    r->z_is_one = 1;
+}
+
+void secp256k1_internals_point_add(secp256k1_internals_point *r, const secp256k1_internals_point *a, secp256k1_internals_point *b) {
+    secp256k1_ge pk;
+    internals_point_to_ge(&pk, b);
+    secp256k1_gej_add_ge(&r->gej, &a->gej, &pk);
+    r->z_is_one = 0;
 }
