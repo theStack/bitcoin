@@ -69,6 +69,8 @@ def fill_mempool(test_framework, node, miniwallet):
     assert_greater_than(tx_batch_size * num_of_batches, len(node.getrawmempool()))
     # Initial tx created should not be present in the mempool anymore as it had a lower fee rate
     assert tx_to_be_evicted_id not in node.getrawmempool()
+    # Rescan UTXOs in user's MiniWallet instance to take evicted txs into account
+    miniwallet.rescan_utxos()
 
     test_framework.log.debug("Check that mempoolminfee is larger than minrelaytxfee")
     assert_equal(node.getmempoolinfo()['minrelaytxfee'], Decimal('0.00001000'))
