@@ -8,8 +8,21 @@
 #include <test/fuzz/util.h>
 
 #include <vector>
+#include <sys/shm.h>
+#include <unistd.h>
 
-FUZZ_TARGET(muhash)
+namespace {
+static uint8_t* muhash_charaterization_value = nullptr;
+void init_muhash()
+{
+    const char* shmid = getenv("SEMSAN_CHARACTERIZATION_SHMEM_ID");
+    if (shmid) {
+        muhash_charaterization_value = (uint8_t*)shmat(atoi(shmid), nullptr, 0);
+    }
+}
+} // namespace
+
+FUZZ_TARGET(muhash, .init = init_muhash)
 {
     FuzzedDataProvider fuzzed_data_provider{buffer.data(), buffer.size()};
     std::vector<uint8_t> data{ConsumeRandomLengthByteVector(fuzzed_data_provider)};
@@ -67,4 +80,7 @@ FUZZ_TARGET(muhash)
             out2 = initial_state_hash;
         });
     assert(out == out2);
+    if (muhash_charaterization_value) {
+        std::memcpy(muhash_charaterization_value, out.data(), out.size());
+    }
 }
