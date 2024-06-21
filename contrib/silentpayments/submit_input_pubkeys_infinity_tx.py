@@ -47,6 +47,7 @@ def main():
     available_wallets = json.loads(args.bcli("listwallets"))
     if args.wallet not in available_wallets:
         print(f"Error: wallet {args.wallet} is not available. Use one of those: {available_wallets}")
+        sys.exit(1)
 
     if args.debug:
         logging.getLogger().setLevel(logging.DEBUG)
@@ -70,6 +71,8 @@ def main():
     addr1 = json.loads(args.bcli("decodescript", spk1.hex()))["address"]
     addr2 = json.loads(args.bcli("decodescript", spk2.hex()))["address"]
 
+    print(f"     Privkey 1: {privkey1.to_bytes(32, 'big').hex()}")
+    print(f"     Privkey 2: {privkey2.to_bytes(32, 'big').hex()}")
     print(f"      Pubkey 1: {pubkey1_bytes.hex()}")
     print(f"      Pubkey 2: {pubkey2_bytes.hex()}")
     print(f"scriptPubKey 1: {spk1.hex()}")
