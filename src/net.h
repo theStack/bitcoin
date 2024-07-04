@@ -991,8 +991,11 @@ public:
     /** Mutex for anything that is only accessed via the msg processing thread */
     static Mutex g_msgproc_mutex;
 
-    /** Initialize a peer (setup state, queue any initial messages) */
+    /** Initialize a peer (setup state) */
     virtual void InitializeNode(CNode& node, ServiceFlags our_services) = 0;
+
+    /** Queue initial messages for peer (only relevant for outbound connections) */
+    virtual void SendInitialMessages(CNode& node) = 0;
 
     /** Handle removal of a peer (clear state) */
     virtual void FinalizeNode(const CNode& node) = 0;

@@ -2928,6 +2928,7 @@ void CConnman::OpenNetworkConnection(const CAddress& addrConnect, bool fCountFai
         // update connection count by network
         if (pnode->IsManualOrFullOutboundConn()) ++m_network_conn_counts[pnode->addr.GetNetwork()];
     }
+    m_msgproc->SendInitialMessages(*pnode);
 }
 
 Mutex NetEventsInterface::g_msgproc_mutex;
