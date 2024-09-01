@@ -5,6 +5,7 @@
 
 import time
 
+from test_framework.blocktools import MAX_STANDARD_TX_WEIGHT
 from test_framework.messages import (
     CInv,
     CTxInWitness,
@@ -28,6 +29,7 @@ from test_framework.p2p import (
 )
 from test_framework.util import (
     assert_equal,
+    assert_greater_than_or_equal,
 )
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.wallet import (
@@ -566,6 +568,23 @@ class OrphanHandlingTest(BitcoinTestFramework):
         assert tx_child["txid"] in node_mempool
         assert_equal(node.getmempoolentry(tx_child["txid"])["wtxid"], tx_child["wtxid"])
 
+    @cleanup
+    def test_orphan_reject_large_tx(self):
+        self.log.info("Test that large transactions (>MAX_STANDARD_TX_WEIGHT) aren't put into orphanage")
+        # we have to explicitly allow non-standard txs to reach this code path, as otherwise
+        # the tx is already rejected earlier with "tx-size" (see `IsStandardTx` check)
+        self.restart_node(0, extra_args=['-acceptnonstdtxn=1'])
+        oversize_weight = MAX_STANDARD_TX_WEIGHT + 1
+        large_tx = self.wallet.create_self_transfer(target_weight=oversize_weight)['tx']
+        assert_greater_than_or_equal(large_tx.get_weight(), oversize_weight)
+        oversize_weight = large_tx.get_weight()
+        large_tx.vin[0].prevout.hash = 3133742  # overwrite prevout with fake txid to create orphan
+        txid, wtxid = large_tx.rehash(), large_tx.getwtxid()
+        large_orphan_logmsg = f"ignoring large orphan tx (size: {oversize_weight}, txid: {txid}, wtxid: {wtxid})"
+        peer = self.nodes[0].add_p2p_connection(P2PInterface())
+        with self.nodes[0].assert_debug_log(expected_msgs=[large_orphan_logmsg]):
+            peer.send_message(msg_tx(large_tx))
+        self.restart_node(0)  # the following tests should only accept standard txs again
 
     def run_test(self):
         self.nodes[0].setmocktime(int(time.time()))
@@ -573,6 +592,7 @@ class OrphanHandlingTest(BitcoinTestFramework):
         self.generate(self.wallet_nonsegwit, 10)
         self.wallet = MiniWallet(self.nodes[0])
         self.generate(self.wallet, 160)
+        self.test_orphan_reject_large_tx()
         self.test_arrival_timing_orphan()
         self.test_orphan_rejected_parents_exceptions()
         self.test_orphan_multiple_parents()
