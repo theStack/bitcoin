@@ -2238,6 +2238,7 @@ bool DescriptorScriptPubKeyMan::TopUpWithDB(WalletBatch& batch, unsigned int siz
     } else {
         target_size = m_keypool_size;
     }
+    LogPrintf("::TopUpWithDB\n");
 
     // Calculate the new range_end
     int32_t new_range_end = std::max(m_wallet_descriptor.next_index + (int32_t)target_size, m_wallet_descriptor.range_end);
@@ -2273,6 +2274,7 @@ bool DescriptorScriptPubKeyMan::TopUpWithDB(WalletBatch& batch, unsigned int siz
                 // It doesn't matter which of many valid indexes the pubkey has, we just need an index where we can derive it and it's private key
                 continue;
             }
+	    LogPrintf("===> pub pubkey %s into m_map_pubkeys <===\n", HexStr(pubkey));
             m_map_pubkeys[pubkey] = i;
         }
         // Merge and write the cache
@@ -2458,7 +2460,20 @@ std::unique_ptr<FlatSigningProvider> DescriptorScriptPubKeyMan::GetSigningProvid
     // Always try to get the signing provider with private keys. This function should only be called during signing anyways
     std::unique_ptr<FlatSigningProvider> out = GetSigningProvider(index, true);
     if (!out->HaveKey(pubkey.GetID())) {
+        LogPrintf("***** GetSigningProvider failed, doesn't have private key for public key %s *****\n",
+            HexStr(pubkey));
+	LogPrintf("the following private keys are available:\n");
+	for (auto [keyid, key] : out->keys) {
+       		LogPrintf("    - %s\n", HexStr(key)); 
+	}
+        assert(false);
         return nullptr;
+    } else {
+	LogPrintf("***** GetSigningProvider succeeded for public key %s *****\n", HexStr(pubkey));
+	LogPrintf("the following private keys were available:\n");
+	for (auto [keyid, key] : out->keys) {
+       		LogPrintf("    - %s\n", HexStr(key)); 
+	}
     }
     return out;
 }
@@ -2660,6 +2675,7 @@ void DescriptorScriptPubKeyMan::SetCache(const DescriptorCache& cache)
     LOCK(cs_desc_man);
     std::set<CScript> new_spks;
     m_wallet_descriptor.cache = cache;
+    LogPrintf("::SetCache\n");
     for (int32_t i = m_wallet_descriptor.range_start; i < m_wallet_descriptor.range_end; ++i) {
         FlatSigningProvider out_keys;
         std::vector<CScript> scripts_temp;
@@ -2681,6 +2697,7 @@ void DescriptorScriptPubKeyMan::SetCache(const DescriptorCache& cache)
                 // It doesn't matter which of many valid indexes the pubkey has, we just need an index where we can derive it and it's private key
                 continue;
             }
+	    LogPrintf("===> pub pubkey %s into m_map_pubkeys <===\n", HexStr(pubkey));
             m_map_pubkeys[pubkey] = i;
         }
         m_max_cached_index++;
