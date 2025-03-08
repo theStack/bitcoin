@@ -44,6 +44,7 @@ void IBDBoosterHints::Load(const std::string& filename)
         }
     }
 
+    final_block_height = block_height-1;
     is_loaded = true;
 }
 
