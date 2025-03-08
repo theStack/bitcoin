@@ -17,9 +17,11 @@
 #include <consensus/tx_check.h>
 #include <consensus/tx_verify.h>
 #include <consensus/validation.h>
+#include <crypto/muhash.h>
 #include <cuckoocache.h>
 #include <flatfile.h>
 #include <hash.h>
+#include <ibd_booster.h>
 #include <kernel/chain.h>
 #include <kernel/chainparams.h>
 #include <kernel/coinstats.h>
@@ -110,6 +112,9 @@ const std::vector<std::string> CHECKLEVEL_DOC {
  *  noticeably interfere with the pruning mechanism.
  * */
 static constexpr int PRUNE_LOCK_BUFFER{10};
+
+MuHash3072 g_ibd_booster_muhash;
+IBDBoosterHints g_ibd_booster_hints;
 
 TRACEPOINT_SEMAPHORE(validation, block_connected);
 TRACEPOINT_SEMAPHORE(utxocache, flush);
@@ -2113,6 +2118,35 @@ void UpdateCoins(const CTransaction& tx, CCoinsViewCache& inputs, CTxUndo &txund
     AddCoins(inputs, tx, nHeight);
 }
 
+void UpdateCoinsIBDBooster(const CTransaction& tx, CCoinsViewCache& inputs, int nHeight)
+{
+    bool tx_is_coinbase = tx.IsCoinBase();
+    // mark inputs spent (-> simply remove them from ibd booster muhash)
+    if (!tx_is_coinbase) {
+        for (const CTxIn &txin : tx.vin) {
+            DataStream ss{};
+            ss << txin.prevout;
+            g_ibd_booster_muhash.Remove(MakeUCharSpan(ss));
+        }
+    }
+    // add outputs
+    const Txid& txid = tx.GetHash();
+    for (size_t i = 0; i < tx.vout.size(); ++i) {
+        // if we already know it gets spent up until the final booster block: add it to ibd booster muhash
+        if (!g_ibd_booster_hints.GetNextBit()) {
+            if (!tx.vout[i].scriptPubKey.IsUnspendable()) {
+                DataStream ss{};
+                ss << COutPoint(txid, i);
+                g_ibd_booster_muhash.Insert(MakeUCharSpan(ss));
+            }
+        // if we know it ends up in the final booster block UTXO set: add it as usual
+        } else {
+            bool overwrite = tx_is_coinbase;
+            inputs.AddCoin(COutPoint(txid, i), Coin(tx.vout[i], nHeight, tx_is_coinbase), overwrite);
+        }
+    }
+}
+
 std::optional<std::pair<ScriptError, std::string>> CScriptCheck::operator()() {
     const CScript &scriptSig = ptxTo->vin[nIn].scriptSig;
     const CScriptWitness *witness = &ptxTo->vin[nIn].scriptWitness;
@@ -2642,6 +2676,11 @@ bool Chainstate::ConnectBlock(const CBlock& block, BlockValidationState& state, 
     CAmount nFees = 0;
     int nInputs = 0;
     int64_t nSigOpsCost = 0;
+    bool use_ibd_booster = g_ibd_booster_hints.IsLoaded() &&
+        pindex->nHeight <= g_ibd_booster_hints.GetFinalBlockHeight();
+    if (use_ibd_booster) {
+        g_ibd_booster_hints.SetCurrentBlockHeight(pindex->nHeight);
+    }
     blockundo.vtxundo.reserve(block.vtx.size() - 1);
     for (unsigned int i = 0; i < block.vtx.size(); i++)
     {
@@ -2650,7 +2689,7 @@ bool Chainstate::ConnectBlock(const CBlock& block, BlockValidationState& state, 
 
         nInputs += tx.vin.size();
 
-        if (!tx.IsCoinBase())
+        if (!tx.IsCoinBase() && !use_ibd_booster)
         {
             CAmount txfee = 0;
             TxValidationState tx_state;
@@ -2683,17 +2722,19 @@ bool Chainstate::ConnectBlock(const CBlock& block, BlockValidationState& state, 
             }
         }
 
-        // GetTransactionSigOpCost counts 3 types of sigops:
-        // * legacy (always)
-        // * p2sh (when P2SH enabled in flags and excludes coinbase)
-        // * witness (when witness enabled in flags and excludes coinbase)
-        nSigOpsCost += GetTransactionSigOpCost(tx, view, flags);
-        if (nSigOpsCost > MAX_BLOCK_SIGOPS_COST) {
-            state.Invalid(BlockValidationResult::BLOCK_CONSENSUS, "bad-blk-sigops", "too many sigops");
-            break;
+        if (!use_ibd_booster) {
+            // GetTransactionSigOpCost counts 3 types of sigops:
+            // * legacy (always)
+            // * p2sh (when P2SH enabled in flags and excludes coinbase)
+            // * witness (when witness enabled in flags and excludes coinbase)
+            nSigOpsCost += GetTransactionSigOpCost(tx, view, flags);
+            if (nSigOpsCost > MAX_BLOCK_SIGOPS_COST) {
+                state.Invalid(BlockValidationResult::BLOCK_CONSENSUS, "bad-blk-sigops", "too many sigops");
+                break;
+            }
         }
 
-        if (!tx.IsCoinBase())
+        if (!tx.IsCoinBase() && !use_ibd_booster)
         {
             std::vector<CScriptCheck> vChecks;
             bool fCacheResults = fJustCheck; /* Don't cache results if we're actually connecting blocks (still consult the cache, though) */
@@ -2711,7 +2752,11 @@ bool Chainstate::ConnectBlock(const CBlock& block, BlockValidationState& state, 
         if (i > 0) {
             blockundo.vtxundo.emplace_back();
         }
-        UpdateCoins(tx, view, i == 0 ? undoDummy : blockundo.vtxundo.back(), pindex->nHeight);
+        if (!use_ibd_booster) {
+            UpdateCoins(tx, view, i == 0 ? undoDummy : blockundo.vtxundo.back(), pindex->nHeight);
+        } else {
+            UpdateCoinsIBDBooster(tx, view, pindex->nHeight);
+        }
     }
     const auto time_3{SteadyClock::now()};
     m_chainman.time_connect += time_3 - time_2;
@@ -2721,10 +2766,12 @@ bool Chainstate::ConnectBlock(const CBlock& block, BlockValidationState& state, 
              Ticks<SecondsDouble>(m_chainman.time_connect),
              Ticks<MillisecondsDouble>(m_chainman.time_connect) / m_chainman.num_blocks_total);
 
-    CAmount blockReward = nFees + GetBlockSubsidy(pindex->nHeight, params.GetConsensus());
-    if (block.vtx[0]->GetValueOut() > blockReward && state.IsValid()) {
-        state.Invalid(BlockValidationResult::BLOCK_CONSENSUS, "bad-cb-amount",
-                      strprintf("coinbase pays too much (actual=%d vs limit=%d)", block.vtx[0]->GetValueOut(), blockReward));
+    if (!use_ibd_booster) {
+        CAmount blockReward = nFees + GetBlockSubsidy(pindex->nHeight, params.GetConsensus());
+        if (block.vtx[0]->GetValueOut() > blockReward && state.IsValid()) {
+            state.Invalid(BlockValidationResult::BLOCK_CONSENSUS, "bad-cb-amount",
+                          strprintf("coinbase pays too much (actual=%d vs limit=%d)", block.vtx[0]->GetValueOut(), blockReward));
+        }
     }
 
     auto parallel_result = control.Complete();
@@ -2747,7 +2794,8 @@ bool Chainstate::ConnectBlock(const CBlock& block, BlockValidationState& state, 
         return true;
     }
 
-    if (!m_blockman.WriteBlockUndo(blockundo, state, *pindex)) {
+    // TODO: potential showstopper: we can't write undo data when we use IBD Booster :(
+    if (!use_ibd_booster && !m_blockman.WriteBlockUndo(blockundo, state, *pindex)) {
         return false;
     }
 
