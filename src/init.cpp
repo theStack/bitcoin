@@ -24,6 +24,7 @@
 #include <hash.h>
 #include <httprpc.h>
 #include <httpserver.h>
+#include <ibd_booster.h>
 #include <index/blockfilterindex.h>
 #include <index/coinstatsindex.h>
 #include <index/txindex.h>
@@ -146,6 +147,8 @@ static constexpr bool DEFAULT_PROXYRANDOMIZE{true};
 static constexpr bool DEFAULT_REST_ENABLE{false};
 static constexpr bool DEFAULT_I2P_ACCEPT_INCOMING{true};
 static constexpr bool DEFAULT_STOPAFTERBLOCKIMPORT{false};
+
+extern IBDBoosterHints g_ibd_booster_hints;
 
 #ifdef WIN32
 // Win32 LevelDB doesn't use filedescriptors, and the ones used for
@@ -1657,6 +1660,9 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
         validation_signals.RegisterValidationInterface(g_zmq_notification_interface.get());
     }
 #endif
+
+    LogInfo("Loading IBD Booster hints bitmap...");
+    g_ibd_booster_hints.Load("./booster.bin"); // TODO: add -ibdboosterfile parameter
 
     // ********************************************************* Step 7: load block chain
 
