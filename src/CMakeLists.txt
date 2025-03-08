@@ -230,6 +230,7 @@ add_library(bitcoin_node STATIC EXCLUDE_FROM_ALL
   httprpc.cpp
   httpserver.cpp
   i2p.cpp
+  ibd_booster.cpp
   index/base.cpp
   index/blockfilterindex.cpp
   index/coinstatsindex.cpp
