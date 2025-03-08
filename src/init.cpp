@@ -68,6 +68,7 @@
 #include <rpc/util.h>
 #include <scheduler.h>
 #include <script/sigcache.h>
+#include <swiftsync.h>
 #include <sync.h>
 #include <torcontrol.h>
 #include <txdb.h>
@@ -146,6 +147,8 @@ static constexpr bool DEFAULT_PROXYRANDOMIZE{true};
 static constexpr bool DEFAULT_REST_ENABLE{false};
 static constexpr bool DEFAULT_I2P_ACCEPT_INCOMING{true};
 static constexpr bool DEFAULT_STOPAFTERBLOCKIMPORT{false};
+
+extern SwiftSyncHints g_swiftsync_hints;
 
 #ifdef WIN32
 // Win32 LevelDB doesn't use filedescriptors, and the ones used for
@@ -1660,6 +1663,9 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
         validation_signals.RegisterValidationInterface(g_zmq_notification_interface.get());
     }
 #endif
+
+    LogInfo("Loading SwiftSync hints bitmap...");
+    g_swiftsync_hints.Load("./booster.bin"); // TODO: add -swiftsyncfile parameter
 
     // ********************************************************* Step 7: load block chain
 

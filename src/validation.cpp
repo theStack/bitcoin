@@ -17,6 +17,7 @@
 #include <consensus/tx_check.h>
 #include <consensus/tx_verify.h>
 #include <consensus/validation.h>
+#include <crypto/muhash.h>
 #include <cuckoocache.h>
 #include <flatfile.h>
 #include <hash.h>
@@ -44,6 +45,7 @@
 #include <script/script.h>
 #include <script/sigcache.h>
 #include <signet.h>
+#include <swiftsync.h>
 #include <tinyformat.h>
 #include <txdb.h>
 #include <txmempool.h>
@@ -110,6 +112,10 @@ const std::vector<std::string> CHECKLEVEL_DOC {
  *  noticeably interfere with the pruning mechanism.
  * */
 static constexpr int PRUNE_LOCK_BUFFER{10};
+
+static arith_uint256 g_swiftsync_aggregate_hash;
+static HashWriter g_swiftsync_salted_hash_writer;
+SwiftSyncHints g_swiftsync_hints;
 
 TRACEPOINT_SEMAPHORE(validation, block_connected);
 TRACEPOINT_SEMAPHORE(utxocache, flush);
@@ -2113,6 +2119,37 @@ void UpdateCoins(const CTransaction& tx, CCoinsViewCache& inputs, CTxUndo &txund
     AddCoins(inputs, tx, nHeight);
 }
 
+void UpdateCoinsSwiftSync(const CTransaction& tx, CCoinsViewCache& inputs, const CBlockIndex& block_index)
+{
+    bool tx_is_coinbase = tx.IsCoinBase();
+
+    // ignore txs that are overwritten later (duplicate txids)
+    if (IsBIP30Unspendable(block_index) && tx_is_coinbase) return;
+
+    // mark inputs spent (-> simply remove them from swiftsync aggregate hash)
+    if (!tx_is_coinbase) {
+        for (const CTxIn &txin : tx.vin) {
+            auto coin_hash = (HashWriter(g_swiftsync_salted_hash_writer) << txin.prevout).GetSHA256();
+            g_swiftsync_aggregate_hash -= UintToArith256(coin_hash);
+        }
+    }
+    // add outputs
+    const Txid& txid = tx.GetHash();
+    for (size_t i = 0; i < tx.vout.size(); ++i) {
+        // if we already know it gets spent up until the terminal swiftsync block: add it to swiftsync aggregate hash
+        if (!g_swiftsync_hints.GetNextBit()) {
+            if (!tx.vout[i].scriptPubKey.IsUnspendable()) {
+                auto coin_hash = (HashWriter(g_swiftsync_salted_hash_writer) << COutPoint(txid, i)).GetSHA256();
+                g_swiftsync_aggregate_hash += UintToArith256(coin_hash);
+            }
+        // if we know it ends up in the terminal swiftsync block UTXO set: add it as usual
+        } else {
+            bool overwrite = tx_is_coinbase;
+            inputs.AddCoin(COutPoint(txid, i), Coin(tx.vout[i], block_index.nHeight, tx_is_coinbase), overwrite);
+        }
+    }
+}
+
 std::optional<std::pair<ScriptError, std::string>> CScriptCheck::operator()() {
     const CScript &scriptSig = ptxTo->vin[nIn].scriptSig;
     const CScriptWitness *witness = &ptxTo->vin[nIn].scriptWitness;
@@ -2483,6 +2520,11 @@ bool Chainstate::ConnectBlock(const CBlock& block, BlockValidationState& state, 
     // Special case for the genesis block, skipping connection of its transactions
     // (its coinbase is unspendable)
     if (block_hash == params.GetConsensus().hashGenesisBlock) {
+        g_swiftsync_aggregate_hash = arith_uint256{0};
+        std::array<std::byte, 32> swiftsync_salt;
+        FastRandomContext{}.fillrand(swiftsync_salt);
+        g_swiftsync_salted_hash_writer.write(swiftsync_salt);
+
         if (!fJustCheck)
             view.SetBestBlock(pindex->GetBlockHash());
         return true;
@@ -2642,6 +2684,11 @@ bool Chainstate::ConnectBlock(const CBlock& block, BlockValidationState& state, 
     CAmount nFees = 0;
     int nInputs = 0;
     int64_t nSigOpsCost = 0;
+    bool use_swiftsync = g_swiftsync_hints.IsLoaded() &&
+        pindex->nHeight <= g_swiftsync_hints.GetTerminalBlockHeight();
+    if (use_swiftsync) {
+        g_swiftsync_hints.SetCurrentBlockHeight(pindex->nHeight);
+    }
     blockundo.vtxundo.reserve(block.vtx.size() - 1);
     for (unsigned int i = 0; i < block.vtx.size(); i++)
     {
@@ -2650,7 +2697,7 @@ bool Chainstate::ConnectBlock(const CBlock& block, BlockValidationState& state, 
 
         nInputs += tx.vin.size();
 
-        if (!tx.IsCoinBase())
+        if (!tx.IsCoinBase() && !use_swiftsync)
         {
             CAmount txfee = 0;
             TxValidationState tx_state;
@@ -2683,17 +2730,19 @@ bool Chainstate::ConnectBlock(const CBlock& block, BlockValidationState& state, 
             }
         }
 
-        // GetTransactionSigOpCost counts 3 types of sigops:
-        // * legacy (always)
-        // * p2sh (when P2SH enabled in flags and excludes coinbase)
-        // * witness (when witness enabled in flags and excludes coinbase)
-        nSigOpsCost += GetTransactionSigOpCost(tx, view, flags);
-        if (nSigOpsCost > MAX_BLOCK_SIGOPS_COST) {
-            state.Invalid(BlockValidationResult::BLOCK_CONSENSUS, "bad-blk-sigops", "too many sigops");
-            break;
+        if (!use_swiftsync) {
+            // GetTransactionSigOpCost counts 3 types of sigops:
+            // * legacy (always)
+            // * p2sh (when P2SH enabled in flags and excludes coinbase)
+            // * witness (when witness enabled in flags and excludes coinbase)
+            nSigOpsCost += GetTransactionSigOpCost(tx, view, flags);
+            if (nSigOpsCost > MAX_BLOCK_SIGOPS_COST) {
+                state.Invalid(BlockValidationResult::BLOCK_CONSENSUS, "bad-blk-sigops", "too many sigops");
+                break;
+            }
         }
 
-        if (!tx.IsCoinBase())
+        if (!tx.IsCoinBase() && !use_swiftsync)
         {
             std::vector<CScriptCheck> vChecks;
             bool fCacheResults = fJustCheck; /* Don't cache results if we're actually connecting blocks (still consult the cache, though) */
@@ -2711,8 +2760,24 @@ bool Chainstate::ConnectBlock(const CBlock& block, BlockValidationState& state, 
         if (i > 0) {
             blockundo.vtxundo.emplace_back();
         }
-        UpdateCoins(tx, view, i == 0 ? undoDummy : blockundo.vtxundo.back(), pindex->nHeight);
+        if (!use_swiftsync) {
+            UpdateCoins(tx, view, i == 0 ? undoDummy : blockundo.vtxundo.back(), pindex->nHeight);
+        } else {
+            UpdateCoinsSwiftSync(tx, view, *pindex);
+        }
     }
+
+    if (pindex->nHeight == g_swiftsync_hints.GetTerminalBlockHeight()) {
+        if (g_swiftsync_aggregate_hash == 0) {
+            LogInfo("*** SwiftSync: aggregate hash check at terminal block height %d succeeded. ***\n", pindex->nHeight);
+        } else {
+            // TODO: find a proper way to signal this error; strictly speaking it's not a
+            // block validation error, most likely the given hints data file was invalid
+            state.Invalid(BlockValidationResult::BLOCK_CONSENSUS, "swiftsync-aggregate-hash-not-zero-at-terminal-block",
+                          "fails the aggregate hash check (should be zero at terminal block!)");
+        }
+    }
+
     const auto time_3{SteadyClock::now()};
     m_chainman.time_connect += time_3 - time_2;
     LogDebug(BCLog::BENCH, "      - Connect %u transactions: %.2fms (%.3fms/tx, %.3fms/txin) [%.2fs (%.2fms/blk)]\n", (unsigned)block.vtx.size(),
@@ -2721,10 +2786,12 @@ bool Chainstate::ConnectBlock(const CBlock& block, BlockValidationState& state, 
              Ticks<SecondsDouble>(m_chainman.time_connect),
              Ticks<MillisecondsDouble>(m_chainman.time_connect) / m_chainman.num_blocks_total);
 
-    CAmount blockReward = nFees + GetBlockSubsidy(pindex->nHeight, params.GetConsensus());
-    if (block.vtx[0]->GetValueOut() > blockReward && state.IsValid()) {
-        state.Invalid(BlockValidationResult::BLOCK_CONSENSUS, "bad-cb-amount",
-                      strprintf("coinbase pays too much (actual=%d vs limit=%d)", block.vtx[0]->GetValueOut(), blockReward));
+    if (!use_swiftsync) {
+        CAmount blockReward = nFees + GetBlockSubsidy(pindex->nHeight, params.GetConsensus());
+        if (block.vtx[0]->GetValueOut() > blockReward && state.IsValid()) {
+            state.Invalid(BlockValidationResult::BLOCK_CONSENSUS, "bad-cb-amount",
+                          strprintf("coinbase pays too much (actual=%d vs limit=%d)", block.vtx[0]->GetValueOut(), blockReward));
+        }
     }
 
     auto parallel_result = control.Complete();
@@ -2747,7 +2814,8 @@ bool Chainstate::ConnectBlock(const CBlock& block, BlockValidationState& state, 
         return true;
     }
 
-    if (!m_blockman.WriteBlockUndo(blockundo, state, *pindex)) {
+    // TODO: potential showstopper: we can't write undo data when we use SwiftSync :(
+    if (!use_swiftsync && !m_blockman.WriteBlockUndo(blockundo, state, *pindex)) {
         return false;
     }
 

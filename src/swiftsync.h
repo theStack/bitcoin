@@ -14,11 +14,14 @@ class SwiftSyncHints
 public:
     void Load(const std::string &filename);
     bool IsLoaded() const { return is_loaded; }
+    int  GetTerminalBlockHeight() const { return terminal_block_height; }
     void SetCurrentBlockHeight(int block_height);
     bool GetNextBit();
+    int  GetNextBitPos() { return next_bit_pos; }
 
 private:
     bool is_loaded{false};
+    int terminal_block_height;
     std::vector<bool> *current_bitmap;
     int next_bit_pos;
     std::map<int, std::vector<bool>> block_outputs_bitmap;

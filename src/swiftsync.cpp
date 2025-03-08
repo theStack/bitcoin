@@ -45,6 +45,7 @@ void SwiftSyncHints::Load(const std::string& filename)
         }
     }
 
+    terminal_block_height = block_height-1;
     is_loaded = true;
 }
 
