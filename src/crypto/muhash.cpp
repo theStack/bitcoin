@@ -573,6 +573,15 @@ MuHash3072& MuHash3072::operator/=(const MuHash3072& div) noexcept
     return *this;
 }
 
+bool MuHash3072::IsEmptySet() noexcept
+{
+    unsigned char num_bytes[Num3072::BYTE_SIZE];
+    unsigned char den_bytes[Num3072::BYTE_SIZE];
+    m_numerator.ToBytes(num_bytes);
+    m_denominator.ToBytes(den_bytes);
+    return std::equal(std::begin(num_bytes), std::end(num_bytes), std::begin(den_bytes));
+}
+
 MuHash3072& MuHash3072::Insert(std::span<const unsigned char> in) noexcept {
     m_numerator.Multiply(ToNum3072(in));
     return *this;
