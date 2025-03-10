@@ -2546,7 +2546,11 @@ bool Chainstate::ConnectBlock(const CBlock& block, BlockValidationState& state, 
                 //  artificially set the default assumed verified block further back.
                 // The test against the minimum chain work prevents the skipping when denied access to any chain at
                 //  least as good as the expected chain.
-                fScriptChecks = (GetBlockProofEquivalentTime(*m_chainman.m_best_header, *pindex, *m_chainman.m_best_header, params.GetConsensus()) <= 60 * 60 * 24 * 7 * 2);
+                //fScriptChecks = (GetBlockProofEquivalentTime(*m_chainman.m_best_header, *pindex, *m_chainman.m_best_header, params.GetConsensus()) <= 0);
+                //
+                // enforce skipping of script checks up to the assumevalid hash to ensure IBD Booster works
+                // (which depends on this flag)
+                fScriptChecks = false;
             }
         }
     }
@@ -2674,7 +2678,8 @@ bool Chainstate::ConnectBlock(const CBlock& block, BlockValidationState& state, 
     CAmount nFees = 0;
     int nInputs = 0;
     int64_t nSigOpsCost = 0;
-    bool use_ibd_booster = g_ibd_booster_hints.IsLoaded() && !fScriptChecks;
+    bool use_ibd_booster = g_ibd_booster_hints.IsLoaded() &&
+        pindex->nHeight <= g_ibd_booster_hints.GetFinalBlockHeight() && !fScriptChecks;
     if (use_ibd_booster) {
         g_ibd_booster_hints.SetCurrentBlockHeight(pindex->nHeight);
     }
