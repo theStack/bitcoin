@@ -123,6 +123,9 @@ public:
     /* Divide (resulting in a hash for the difference of the sets) */
     MuHash3072& operator/=(const MuHash3072& div) noexcept;
 
+    /* Check if the set is empty. */
+    bool IsEmptySet() noexcept;
+
     /* Finalize into a 32-byte hash. Does not change this object's value. */
     void Finalize(uint256& out) noexcept;
 
