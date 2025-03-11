@@ -2134,9 +2134,11 @@ void UpdateCoinsIBDBooster(const CTransaction& tx, CCoinsViewCache& inputs, int 
     for (size_t i = 0; i < tx.vout.size(); ++i) {
         // if we already know it gets spent up until assumevalid: add it to ibd booster muhash
         if (!g_ibd_booster_hints.GetNextBit()) {
-            DataStream ss{};
-            ss << COutPoint(txid, i);
-            g_ibd_booster_muhash.Insert(MakeUCharSpan(ss));
+            if (!tx.vout[i].scriptPubKey.IsUnspendable()) {
+                DataStream ss{};
+                ss << COutPoint(txid, i);
+                g_ibd_booster_muhash.Insert(MakeUCharSpan(ss));
+            }
         // if we know it ends up in the assumevalid UTXO set: add it as usual
         } else {
             bool overwrite = tx_is_coinbase;
@@ -2758,19 +2760,21 @@ bool Chainstate::ConnectBlock(const CBlock& block, BlockValidationState& state, 
             UpdateCoins(tx, view, i == 0 ? undoDummy : blockundo.vtxundo.back(), pindex->nHeight);
         } else {
             UpdateCoinsIBDBooster(tx, view, pindex->nHeight);
-            if (pindex->nHeight == g_ibd_booster_hints.GetFinalBlockHeight()) {
-                if (g_ibd_booster_muhash.IsEmptySet()) {
-                    LogInfo("*** IBD Booster: MuHash check at block height %d succeeded. ***\n", pindex->nHeight);
-                } else {
-                    // TODO: find a proper way to signal this error; strictly speaking it's not a
-                    // block validation error, most likely the given hints data file was invalid
-                    state.Invalid(BlockValidationResult::BLOCK_CONSENSUS, "ibd-booster-muhash-not-empty-at-final-block",
-                                  "fails the IBD-Booster-MuHash check (should be an empty set!)");
-                    break;
-                }
-            }
         }
     }
+
+    if (pindex->nHeight == g_ibd_booster_hints.GetFinalBlockHeight()) {
+        if (g_ibd_booster_muhash.IsEmptySet()) {
+            LogInfo("*** IBD Booster: MuHash check at block height %d succeeded. ***\n", pindex->nHeight);
+        } else {
+            // TODO: find a proper way to signal this error; strictly speaking it's not a
+            // block validation error, most likely the given hints data file was invalid
+            state.Invalid(BlockValidationResult::BLOCK_CONSENSUS, "ibd-booster-muhash-not-empty-at-final-block",
+                          "fails the IBD-Booster-MuHash check (should be an empty set!)");
+        }
+        assert(false); /* stop here by now to see something from the log */
+    }
+
     const auto time_3{SteadyClock::now()};
     m_chainman.time_connect += time_3 - time_2;
     LogDebug(BCLog::BENCH, "      - Connect %u transactions: %.2fms (%.3fms/tx, %.3fms/txin) [%.2fs (%.2fms/blk)]\n", (unsigned)block.vtx.size(),
