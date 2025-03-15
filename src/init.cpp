@@ -473,6 +473,7 @@ void SetupServerArgs(ArgsManager& argsman, bool can_listen_ipc)
     argsman.AddArg("-alertnotify=<cmd>", "Execute command when an alert is raised (%s in cmd is replaced by message)", ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
 #endif
     argsman.AddArg("-assumevalid=<hex>", strprintf("If this block is in the chain assume that it and its ancestors are valid and potentially skip their script verification (0 to verify all, default: %s, testnet3: %s, testnet4: %s, signet: %s)", defaultChainParams->GetConsensus().defaultAssumeValid.GetHex(), testnetChainParams->GetConsensus().defaultAssumeValid.GetHex(), testnet4ChainParams->GetConsensus().defaultAssumeValid.GetHex(), signetChainParams->GetConsensus().defaultAssumeValid.GetHex()), ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
+    argsman.AddArg("-ibdboosterfile=<file>", "Specify hints file to use for IBD Booster.", ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
     argsman.AddArg("-blocksdir=<dir>", "Specify directory to hold blocks subdirectory for *.dat files (default: <datadir>)", ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
     argsman.AddArg("-blocksxor",
                    strprintf("Whether an XOR-key applies to blocksdir *.dat files. "
@@ -1664,8 +1665,14 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
     }
 #endif
 
-    LogInfo("Loading IBD Booster hints bitmap...");
-    g_ibd_booster_hints.Load("./booster.bin"); // TODO: add -ibdboosterfile parameter
+    if (args.IsArgSet("-ibdboosterfile")) {
+        fs::path path = fs::absolute(args.GetPathArg("-ibdboosterfile"));
+        if (!fs::exists(path)) {
+            return InitError(Untranslated("Provided IBD Booster file doesn't exist"));
+        }
+        LogInfo("Loading IBD Booster hints bitmap file...");
+        g_ibd_booster_hints.Load(path.utf8string());
+    }
 
     // ********************************************************* Step 7: load block chain
 
