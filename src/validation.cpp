@@ -2118,9 +2118,13 @@ void UpdateCoins(const CTransaction& tx, CCoinsViewCache& inputs, CTxUndo &txund
     AddCoins(inputs, tx, nHeight);
 }
 
-void UpdateCoinsIBDBooster(const CTransaction& tx, CCoinsViewCache& inputs, int nHeight)
+void UpdateCoinsIBDBooster(const CTransaction& tx, CCoinsViewCache& inputs, const CBlockIndex& block_index)
 {
     bool tx_is_coinbase = tx.IsCoinBase();
+
+    // ignore txs that are overwritten later (duplicate txids)
+    if (IsBIP30Unspendable(block_index) && tx_is_coinbase) return;
+
     // mark inputs spent (-> simply remove them from ibd booster muhash)
     if (!tx_is_coinbase) {
         for (const CTxIn &txin : tx.vin) {
@@ -2142,7 +2146,7 @@ void UpdateCoinsIBDBooster(const CTransaction& tx, CCoinsViewCache& inputs, int 
         // if we know it ends up in the final booster block UTXO set: add it as usual
         } else {
             bool overwrite = tx_is_coinbase;
-            inputs.AddCoin(COutPoint(txid, i), Coin(tx.vout[i], nHeight, tx_is_coinbase), overwrite);
+            inputs.AddCoin(COutPoint(txid, i), Coin(tx.vout[i], block_index.nHeight, tx_is_coinbase), overwrite);
         }
     }
 }
@@ -2755,7 +2759,7 @@ bool Chainstate::ConnectBlock(const CBlock& block, BlockValidationState& state, 
         if (!use_ibd_booster) {
             UpdateCoins(tx, view, i == 0 ? undoDummy : blockundo.vtxundo.back(), pindex->nHeight);
         } else {
-            UpdateCoinsIBDBooster(tx, view, pindex->nHeight);
+            UpdateCoinsIBDBooster(tx, view, *pindex);
         }
     }
 
