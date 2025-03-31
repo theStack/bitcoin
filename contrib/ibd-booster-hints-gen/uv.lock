@@ -1,0 +1,19 @@
+version = 1
+revision = 1
+requires-python = ">=3.11"
+
+[[package]]
+name = "ibd-booster-hints-gen"
+version = "0.1.0"
+source = { virtual = "." }
+dependencies = [
+    { name = "py-bitcoinkernel" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "py-bitcoinkernel", git = "https://github.com/stickies-v/py-bitcoinkernel" }]
+
+[[package]]
+name = "py-bitcoinkernel"
+version = "0.1.0a3"
+source = { git = "https://github.com/stickies-v/py-bitcoinkernel#8c804b348291665319d2b6b2cf10e4f26cea0c5a" }
