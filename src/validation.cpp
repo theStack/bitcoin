@@ -113,7 +113,8 @@ const std::vector<std::string> CHECKLEVEL_DOC {
  * */
 static constexpr int PRUNE_LOCK_BUFFER{10};
 
-MuHash3072 g_ibd_booster_muhash;
+static arith_uint256 g_ibd_booster_aggregate_hash;
+static HashWriter g_ibd_booster_salted_hash_writer;
 IBDBoosterHints g_ibd_booster_hints;
 
 TRACEPOINT_SEMAPHORE(validation, block_connected);
@@ -2125,23 +2126,21 @@ void UpdateCoinsIBDBooster(const CTransaction& tx, CCoinsViewCache& inputs, cons
     // ignore txs that are overwritten later (duplicate txids)
     if (IsBIP30Unspendable(block_index) && tx_is_coinbase) return;
 
-    // mark inputs spent (-> simply remove them from ibd booster muhash)
+    // mark inputs spent (-> simply remove them from ibd booster aggregate hash)
     if (!tx_is_coinbase) {
         for (const CTxIn &txin : tx.vin) {
-            DataStream ss{};
-            ss << txin.prevout;
-            g_ibd_booster_muhash.Remove(MakeUCharSpan(ss));
+            auto coin_hash = (HashWriter(g_ibd_booster_salted_hash_writer) << txin.prevout).GetSHA256();
+            g_ibd_booster_aggregate_hash -= UintToArith256(coin_hash);
         }
     }
     // add outputs
     const Txid& txid = tx.GetHash();
     for (size_t i = 0; i < tx.vout.size(); ++i) {
-        // if we already know it gets spent up until the final booster block: add it to ibd booster muhash
+        // if we already know it gets spent up until the final booster block: add it to ibd booster aggregate hash
         if (!g_ibd_booster_hints.GetNextBit()) {
             if (!tx.vout[i].scriptPubKey.IsUnspendable()) {
-                DataStream ss{};
-                ss << COutPoint(txid, i);
-                g_ibd_booster_muhash.Insert(MakeUCharSpan(ss));
+                auto coin_hash = (HashWriter(g_ibd_booster_salted_hash_writer) << COutPoint(txid, i)).GetSHA256();
+                g_ibd_booster_aggregate_hash += UintToArith256(coin_hash);
             }
         // if we know it ends up in the final booster block UTXO set: add it as usual
         } else {
@@ -2521,6 +2520,11 @@ bool Chainstate::ConnectBlock(const CBlock& block, BlockValidationState& state, 
     // Special case for the genesis block, skipping connection of its transactions
     // (its coinbase is unspendable)
     if (block_hash == params.GetConsensus().hashGenesisBlock) {
+        g_ibd_booster_aggregate_hash = arith_uint256{0};
+        std::array<std::byte, 32> booster_salt;
+        FastRandomContext{}.fillrand(booster_salt);
+        g_ibd_booster_salted_hash_writer.write(booster_salt);
+
         if (!fJustCheck)
             view.SetBestBlock(pindex->GetBlockHash());
         return true;
@@ -2764,8 +2768,8 @@ bool Chainstate::ConnectBlock(const CBlock& block, BlockValidationState& state, 
     }
 
     if (pindex->nHeight == g_ibd_booster_hints.GetFinalBlockHeight()) {
-        if (g_ibd_booster_muhash.IsEmptySet()) {
-            LogInfo("*** IBD Booster: MuHash check at block height %d succeeded. ***\n", pindex->nHeight);
+        if (g_ibd_booster_aggregate_hash == 0) {
+            LogInfo("*** IBD Booster: aggregate hash check at block height %d succeeded. ***\n", pindex->nHeight);
         } else {
             // TODO: find a proper way to signal this error; strictly speaking it's not a
             // block validation error, most likely the given hints data file was invalid
