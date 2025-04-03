@@ -320,6 +320,7 @@ target_link_libraries(bitcoin_node
     $<TARGET_NAME_IF_EXISTS:bitcoin_zmq>
     leveldb
     minisketch
+    secp256k1
     univalue
     Boost::headers
     $<TARGET_NAME_IF_EXISTS:libevent::core>

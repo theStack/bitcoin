@@ -45,6 +45,7 @@
 #include <random.h>
 #include <script/script.h>
 #include <script/sigcache.h>
+#include <secp256k1.h>
 #include <signet.h>
 #include <tinyformat.h>
 #include <txdb.h>
@@ -67,6 +68,7 @@
 #include <validationinterface.h>
 
 #include <algorithm>
+#include <array>
 #include <cassert>
 #include <chrono>
 #include <deque>
@@ -113,7 +115,17 @@ const std::vector<std::string> CHECKLEVEL_DOC {
  * */
 static constexpr int PRUNE_LOCK_BUFFER{10};
 
-MuHash3072 g_ibd_booster_muhash;
+// HACK: for the booster aggregated hash modulo arithmetic, we abuse
+// secp256k1 scalars. those represent secret keys and are thus never
+// allowed to be zero, so we initialize the aggregate hash with one,
+// and also expect that value at the end of the ibd booster phase if
+// everything goes well. it could be any non-zero value below the
+// curve order though.
+using namespace util::hex_literals;
+constexpr std::array<uint8_t, 32> IBD_BOOSTER_START_HASH
+    {"0000000000000000000000000000000000000000000000000000000000000001"_hex_u8};
+static std::array<uint8_t, 32> g_ibd_booster_aggregate_hash;
+static HashWriter g_ibd_booster_salted_hash_writer;
 IBDBoosterHints g_ibd_booster_hints;
 
 TRACEPOINT_SEMAPHORE(validation, block_connected);
@@ -2128,9 +2140,9 @@ void UpdateCoinsIBDBooster(const CTransaction& tx, CCoinsViewCache& inputs, cons
     // mark inputs spent (-> simply remove them from ibd booster muhash)
     if (!tx_is_coinbase) {
         for (const CTxIn &txin : tx.vin) {
-            DataStream ss{};
-            ss << txin.prevout;
-            g_ibd_booster_muhash.Remove(MakeUCharSpan(ss));
+            auto coin_hash = (HashWriter(g_ibd_booster_salted_hash_writer) << txin.prevout).GetSHA256();
+            secp256k1_ec_seckey_negate(secp256k1_context_static, coin_hash.data());
+            secp256k1_ec_seckey_tweak_add(secp256k1_context_static, g_ibd_booster_aggregate_hash.data(), coin_hash.data());
         }
     }
     // add outputs
@@ -2139,9 +2151,8 @@ void UpdateCoinsIBDBooster(const CTransaction& tx, CCoinsViewCache& inputs, cons
         // if we already know it gets spent up until the final booster block: add it to ibd booster muhash
         if (!g_ibd_booster_hints.GetNextBit()) {
             if (!tx.vout[i].scriptPubKey.IsUnspendable()) {
-                DataStream ss{};
-                ss << COutPoint(txid, i);
-                g_ibd_booster_muhash.Insert(MakeUCharSpan(ss));
+                auto coin_hash = (HashWriter(g_ibd_booster_salted_hash_writer) << COutPoint(txid, i)).GetSHA256();
+                secp256k1_ec_seckey_tweak_add(secp256k1_context_static, g_ibd_booster_aggregate_hash.data(), coin_hash.data());
             }
         // if we know it ends up in the final booster block UTXO set: add it as usual
         } else {
@@ -2521,6 +2532,11 @@ bool Chainstate::ConnectBlock(const CBlock& block, BlockValidationState& state, 
     // Special case for the genesis block, skipping connection of its transactions
     // (its coinbase is unspendable)
     if (block_hash == params.GetConsensus().hashGenesisBlock) {
+        g_ibd_booster_aggregate_hash = IBD_BOOSTER_START_HASH;
+        std::array<std::byte, 32> booster_salt;
+        FastRandomContext{}.fillrand(booster_salt);
+        g_ibd_booster_salted_hash_writer.write(booster_salt);
+
         if (!fJustCheck)
             view.SetBestBlock(pindex->GetBlockHash());
         return true;
@@ -2764,8 +2780,8 @@ bool Chainstate::ConnectBlock(const CBlock& block, BlockValidationState& state, 
     }
 
     if (pindex->nHeight == g_ibd_booster_hints.GetFinalBlockHeight()) {
-        if (g_ibd_booster_muhash.IsEmptySet()) {
-            LogInfo("*** IBD Booster: MuHash check at block height %d succeeded. ***\n", pindex->nHeight);
+        if (g_ibd_booster_aggregate_hash == IBD_BOOSTER_START_HASH) {
+            LogInfo("*** IBD Booster: aggregate hash check at block height %d succeeded. ***\n", pindex->nHeight);
         } else {
             // TODO: find a proper way to signal this error; strictly speaking it's not a
             // block validation error, most likely the given hints data file was invalid
