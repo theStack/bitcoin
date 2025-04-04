@@ -2141,8 +2141,10 @@ void UpdateCoinsIBDBooster(const CTransaction& tx, CCoinsViewCache& inputs, cons
     if (!tx_is_coinbase) {
         for (const CTxIn &txin : tx.vin) {
             auto coin_hash = (HashWriter(g_ibd_booster_salted_hash_writer) << txin.prevout).GetSHA256();
-            secp256k1_ec_seckey_negate(secp256k1_context_static, coin_hash.data());
-            secp256k1_ec_seckey_tweak_add(secp256k1_context_static, g_ibd_booster_aggregate_hash.data(), coin_hash.data());
+            bool ret = secp256k1_ec_seckey_negate(secp256k1_context_static, coin_hash.data());
+            assert(ret);
+            ret = secp256k1_ec_seckey_tweak_add(secp256k1_context_static, g_ibd_booster_aggregate_hash.data(), coin_hash.data());
+            assert(ret);
         }
     }
     // add outputs
@@ -2152,7 +2154,8 @@ void UpdateCoinsIBDBooster(const CTransaction& tx, CCoinsViewCache& inputs, cons
         if (!g_ibd_booster_hints.GetNextBit()) {
             if (!tx.vout[i].scriptPubKey.IsUnspendable()) {
                 auto coin_hash = (HashWriter(g_ibd_booster_salted_hash_writer) << COutPoint(txid, i)).GetSHA256();
-                secp256k1_ec_seckey_tweak_add(secp256k1_context_static, g_ibd_booster_aggregate_hash.data(), coin_hash.data());
+                bool ret = secp256k1_ec_seckey_tweak_add(secp256k1_context_static, g_ibd_booster_aggregate_hash.data(), coin_hash.data());
+                assert(ret);
             }
         // if we know it ends up in the final booster block UTXO set: add it as usual
         } else {
