@@ -398,6 +398,36 @@ BOOST_AUTO_TEST_CASE(peer_dos_limits)
         BOOST_CHECK(orphanage->HaveTxFromPeer(ptx_large->GetWitnessHash(), peer_large));
         BOOST_CHECK_EQUAL(orphanage->CountAnnouncements(), 11);
     }
+
+    // Test eviction if usage limit is exceeded after disconnect (due to decreased global memory limit)
+    {
+        auto orphanage = node::MakeTxOrphanage(20, 2 * TX_SIZE);
+        NodeId peer_low_usage{0};
+        NodeId peer_exceeding_usage{1};
+
+        // peer 0 sends 1 orphan
+        orphanage->AddTx(txns.at(0), peer_low_usage);
+        BOOST_CHECK_EQUAL(orphanage->UsageByPeer(peer_low_usage), TX_SIZE);
+        BOOST_CHECK_EQUAL(orphanage->TotalOrphanUsage(), TX_SIZE);
+        BOOST_CHECK_EQUAL(orphanage->MaxGlobalUsage(), 2 * TX_SIZE);
+
+        // peer 1 sends 3 orphans, exceeds its per-peer usage limit (= 2 orphans);
+        // with 4 orphans in total, we are still within the global usage limit though
+        for (int i = 1; i <= 3; i++) {
+            orphanage->AddTx(txns.at(i), peer_exceeding_usage);
+        }
+        BOOST_CHECK_EQUAL(orphanage->UsageByPeer(peer_exceeding_usage), 3 * TX_SIZE);
+        BOOST_CHECK_EQUAL(orphanage->TotalOrphanUsage(), 4 * TX_SIZE);
+        BOOST_CHECK_EQUAL(orphanage->MaxGlobalUsage(), 4 * TX_SIZE);
+        BOOST_CHECK(!orphanage->NeedsTrim());
+
+        // after peer 0 disconnects, the global usage limit decreases again (to 2 orphans),
+        // so the remaining orphans from peer 1 exceed that, and we should evict (?)
+        orphanage->EraseForPeer(peer_low_usage);
+        BOOST_CHECK_EQUAL(orphanage->MaxGlobalUsage(), 2 * TX_SIZE);
+        BOOST_CHECK_EQUAL(orphanage->TotalOrphanUsage(), 3 * TX_SIZE);
+        BOOST_CHECK(orphanage->NeedsTrim());
+    }
 }
 BOOST_AUTO_TEST_CASE(DoS_mapOrphans)
 {
