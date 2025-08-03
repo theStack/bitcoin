@@ -2123,6 +2123,12 @@ void TxGraphImpl::AbortStaging() noexcept
 
 void TxGraphImpl::CommitStaging() noexcept
 {
+    printf("===== before CommitStaging =====\n");
+    for (int quality = 0; quality < m_main_clusterset.m_clusters.size(); quality++) {
+        auto& cluster_ptrs = m_main_clusterset.m_clusters[quality];
+        printf("Quality level %d: %d clusters\n", quality, cluster_ptrs.size());
+    }
+
     // Staging must exist.
     Assume(m_staging_clusterset.has_value());
     Assume(m_main_chunkindex_observers == 0);
@@ -2155,6 +2161,16 @@ void TxGraphImpl::CommitStaging() noexcept
     // Delete the old staging graph, after all its information was moved to main.
     m_staging_clusterset.reset();
     Compact();
+
+    printf("===== after CommitStaging =====\n");
+    for (int quality = 0; quality < m_main_clusterset.m_clusters.size(); quality++) {
+        auto& cluster_ptrs = m_main_clusterset.m_clusters[quality];
+        printf("Quality level %d: %d clusters [", quality, cluster_ptrs.size());
+        for (auto& cluster_ptr : cluster_ptrs) {
+            printf("%d txs, ", cluster_ptr->GetTxCount());
+        }
+        printf("]\n");
+    }
 }
 
 void Cluster::SetFee(TxGraphImpl& graph, DepGraphIndex idx, int64_t fee) noexcept
@@ -2827,6 +2843,7 @@ std::vector<TxGraph::Ref*> TxGraphImpl::Trim() noexcept
         // Build a heap of all transactions with 0 unmet dependencies.
         std::make_heap(trim_heap.begin(), trim_heap.end(), cmp_fn);
 
+
         // Iterate over to-be-included transactions, and convert them to included transactions, or
         // skip them if adding them would violate resource limits of the would-be cluster.
         //
@@ -2942,5 +2959,6 @@ TxGraph::Ref::Ref(Ref&& other) noexcept
 
 std::unique_ptr<TxGraph> MakeTxGraph(unsigned max_cluster_count, uint64_t max_cluster_size, uint64_t acceptable_iters) noexcept
 {
+    printf("------- CREATE TxGraph with limits: %d [count], %ld [size] -------\n", max_cluster_count, max_cluster_size);
     return std::make_unique<TxGraphImpl>(max_cluster_count, max_cluster_size, acceptable_iters);
 }

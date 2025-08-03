@@ -413,10 +413,12 @@ FUZZ_TARGET(txgraph)
         std::sort(chunk_feerates.begin(), chunk_feerates.end(), std::greater{});
         return chunk_feerates;
     };
+    int txs_added = 0;
 
     LIMITED_WHILE(provider.remaining_bytes() > 0, 200) {
         // Read a one-byte command.
         int command = provider.ConsumeIntegral<uint8_t>();
+        //printf("COMMAND: %d\n", command);
         int orig_command = command;
 
         // Treat the lowest bit of a command as a flag (which selects a variant of some of the
@@ -458,12 +460,25 @@ FUZZ_TARGET(txgraph)
                 FeePerWeight feerate{fee, size};
                 // Create a real TxGraph::Ref.
                 auto ref = real->AddTransaction(feerate);
+                txs_added++;
+                printf("[FUZZ] ********** #%d AddTransaction (fee=%ld, size=%d) **********, ref.graph = %p, ref.index = %d\n",
+                        txs_added, fee, size, ref.GetGraph(), ref.GetGraphIndex());
                 // Create a shared_ptr place in the simulation to put the Ref in.
                 auto ref_loc = top_sim.AddTransaction(feerate);
                 // Move it in place.
                 *ref_loc = std::move(ref);
+
+                if (sims.size() > 1) {
+                    auto clusters = top_sim.GetComponents();
+                    printf("    after adding tx (staging) we have %zu clusters (%d txs in total)\n", clusters.size(), top_sim.GetTransactionCount());
+                    for (auto& cluster : clusters) {
+                        printf("      - cluster with %d txs\n", cluster.Count());
+                        if (cluster.Count() >= 1) printf("        [first tx index == %d, last tx index == %d]\n", cluster.First(), cluster.Last());
+                    }
+                }
                 break;
             } else if ((block_builders.empty() || sims.size() > 1) && top_sim.GetTransactionCount() + top_sim.removed.size() > 1 && command-- == 0) {
+                printf("[FUZZ] ********** AddDependency **********\n");
                 // AddDependency.
                 auto par = pick_fn();
                 auto chl = pick_fn();
@@ -484,6 +499,7 @@ FUZZ_TARGET(txgraph)
                 // has no effect.
                 std::vector<TxGraph::Ref*> to_remove;
                 to_remove.push_back(pick_fn());
+                printf("[FUZZ] ********** RemoveTransaction (including %s) **********\n", alt ? "descendants" : "ancestors");
                 top_sim.IncludeAncDesc(to_remove, alt);
                 // The order in which these ancestors/descendants are removed should not matter;
                 // randomly shuffle them.
@@ -491,9 +507,18 @@ FUZZ_TARGET(txgraph)
                 for (TxGraph::Ref* ptr : to_remove) {
                     real->RemoveTransaction(*ptr);
                     top_sim.RemoveTransaction(ptr);
+                    printf("    remove ref.graph = %p, ref.index = %d\n", ptr->GetGraph(), ptr->GetGraphIndex());
+                }
+
+                auto clusters = top_sim.GetComponents();
+                printf("    after removing, we have %zu clusters (%d txs in total)\n", clusters.size(), top_sim.GetTransactionCount());
+                for (auto& cluster : clusters) {
+                    printf("      - cluster with %d txs\n", cluster.Count());
+                    if (cluster.Count() >= 1) printf("        [first tx index == %d, last tx index == %d]\n", cluster.First(), cluster.Last());
                 }
                 break;
             } else if (sel_sim.removed.size() > 0 && command-- == 0) {
+                printf("[FUZZ] ********** Destruct Ref of an already-removed transaction **********\n");
                 // ~Ref (of an already-removed transaction). Destroying a TxGraph::Ref has an
                 // observable effect on the TxGraph it refers to, so this simulation permits doing
                 // so separately from other actions on TxGraph.
@@ -509,6 +534,7 @@ FUZZ_TARGET(txgraph)
                 sel_sim.removed.pop_back();
                 break;
             } else if (block_builders.empty() && command-- == 0) {
+                printf("[FUZZ] ********** Destruct Ref of any transaction **********\n");
                 // ~Ref (of any transaction).
                 std::vector<TxGraph::Ref*> to_destroy;
                 to_destroy.push_back(pick_fn());
@@ -531,6 +557,7 @@ FUZZ_TARGET(txgraph)
                 }
                 break;
             } else if (block_builders.empty() && command-- == 0) {
+                printf("[FUZZ] ********** SetTransactionFee **********\n");
                 // SetTransactionFee.
                 int64_t fee;
                 if (alt) {
@@ -545,10 +572,12 @@ FUZZ_TARGET(txgraph)
                 }
                 break;
             } else if (command-- == 0) {
+                printf("[FUZZ] ********** GetTransactionCount **********\n");
                 // GetTransactionCount.
                 assert(real->GetTransactionCount(use_main) == sel_sim.GetTransactionCount());
                 break;
             } else if (command-- == 0) {
+                printf("[FUZZ] ********** Exists **********\n");
                 // Exists.
                 auto ref = pick_fn();
                 bool exists = real->Exists(*ref, use_main);
@@ -556,10 +585,12 @@ FUZZ_TARGET(txgraph)
                 assert(exists == should_exist);
                 break;
             } else if (command-- == 0) {
+                printf("[FUZZ] ********** IsOversized **********\n");
                 // IsOversized.
                 assert(sel_sim.IsOversized() == real->IsOversized(use_main));
                 break;
             } else if (command-- == 0) {
+                printf("[FUZZ] ********** GetIndividualFeerate **********\n");
                 // GetIndividualFeerate.
                 auto ref = pick_fn();
                 auto feerate = real->GetIndividualFeerate(*ref);
@@ -574,6 +605,7 @@ FUZZ_TARGET(txgraph)
                 if (!found) assert(feerate.IsEmpty());
                 break;
             } else if (!main_sim.IsOversized() && command-- == 0) {
+                printf("[FUZZ] ********** GetMainChunkFeerate **********\n");
                 // GetMainChunkFeerate.
                 auto ref = pick_fn();
                 auto feerate = real->GetMainChunkFeerate(*ref);
@@ -588,6 +620,7 @@ FUZZ_TARGET(txgraph)
                 }
                 break;
             } else if (!sel_sim.IsOversized() && command-- == 0) {
+                printf("[FUZZ] ********** GetAncestors/GetDescendants **********\n");
                 // GetAncestors/GetDescendants.
                 auto ref = pick_fn();
                 auto result = alt ? real->GetDescendants(*ref, use_main)
@@ -599,6 +632,7 @@ FUZZ_TARGET(txgraph)
                 assert(result_set == expect_set);
                 break;
             } else if (!sel_sim.IsOversized() && command-- == 0) {
+                printf("[FUZZ] ********** GetAncestorsUnion/GetDescendantsUnion **********\n");
                 // GetAncestorsUnion/GetDescendantsUnion.
                 std::vector<TxGraph::Ref*> refs;
                 // Gather a list of up to 15 Ref pointers.
@@ -621,6 +655,7 @@ FUZZ_TARGET(txgraph)
                 assert(result_set == expect_set);
                 break;
             } else if (!sel_sim.IsOversized() && command-- == 0) {
+                printf("[FUZZ] ********** GetCluster **********\n");
                 // GetCluster.
                 auto ref = pick_fn();
                 auto result = real->GetCluster(*ref, use_main);
@@ -656,21 +691,29 @@ FUZZ_TARGET(txgraph)
                 }
                 break;
             } else if (command-- == 0) {
+                printf("[FUZZ] ********** HaveStaging **********\n");
                 // HaveStaging.
                 assert((sims.size() == 2) == real->HaveStaging());
                 break;
             } else if (sims.size() < 2 && command-- == 0) {
+                printf("[FUZZ] ********** StartStaging **********\n");
                 // StartStaging.
                 sims.emplace_back(sims.back());
                 sims.back().modified = SimTxGraph::SetType{};
                 real->StartStaging();
                 break;
             } else if (block_builders.empty() && sims.size() > 1 && command-- == 0) {
+                printf("[FUZZ] ********** CommitStaging **********\n");
                 // CommitStaging.
+                printf("sim[0].real_is_optimal[0] = %d\n", sims[0].real_is_optimal);
+                printf("sim[1].real_is_optimal[1] = %d\n", sims[1].real_is_optimal);
                 real->CommitStaging();
                 sims.erase(sims.begin());
+                printf("after CommitStaging: sim main graph has %d txs, real main graph has %d=%d txs\n",
+                        sims[0].GetTransactionCount(), real->GetTransactionCount(true), real->GetTransactionCount(false));
                 break;
             } else if (sims.size() > 1 && command-- == 0) {
+                printf("[FUZZ] ********** AbortStaging **********\n");
                 // AbortStaging.
                 real->AbortStaging();
                 sims.pop_back();
@@ -680,6 +723,7 @@ FUZZ_TARGET(txgraph)
                 sims.back().oversized = std::nullopt;
                 break;
             } else if (!main_sim.IsOversized() && command-- == 0) {
+                printf("[FUZZ] ********** CompareMainOrder **********\n");
                 // CompareMainOrder.
                 auto ref_a = pick_fn();
                 auto ref_b = pick_fn();
@@ -698,6 +742,7 @@ FUZZ_TARGET(txgraph)
                 // state. A full comparison is done at the end.
                 break;
             } else if (!sel_sim.IsOversized() && command-- == 0) {
+                printf("[FUZZ] ********** CountDistinctClusters **********\n");
                 // CountDistinctClusters.
                 std::vector<TxGraph::Ref*> refs;
                 // Gather a list of up to 15 (or up to 255) Ref pointers.
@@ -729,9 +774,11 @@ FUZZ_TARGET(txgraph)
                 assert(result == sim_reps.Count());
                 break;
             } else if (command-- == 0) {
+                printf("[FUZZ] ********** DoWork **********\n");
                 // DoWork.
                 uint64_t iters = provider.ConsumeIntegralInRange<uint64_t>(0, alt ? 10000 : 255);
                 bool ret = real->DoWork(iters);
+                printf("DoWork(%ld) = %d\n", iters, ret);
                 uint64_t iters_for_optimal{0};
                 for (unsigned level = 0; level < sims.size(); ++level) {
                     // DoWork() will not optimize oversized levels, or the main level if a builder
@@ -743,6 +790,7 @@ FUZZ_TARGET(txgraph)
                     // If neither of the two above conditions holds, and DoWork() returned true,
                     // then the level is optimal.
                     if (ret) {
+                        printf("set .real_is_optimal for sims level %d!\n", level);
                         sims[level].real_is_optimal = true;
                     }
                     // Compute how many iterations would be needed to make everything optimal.
@@ -766,6 +814,7 @@ FUZZ_TARGET(txgraph)
                 }
                 break;
             } else if (sims.size() == 2 && !sims[0].IsOversized() && !sims[1].IsOversized() && command-- == 0) {
+                printf("[FUZZ] ********** GetMainStagingDiagrams **********\n");
                 // GetMainStagingDiagrams()
                 auto [real_main_diagram, real_staged_diagram] = real->GetMainStagingDiagrams();
                 auto real_sum_main = std::accumulate(real_main_diagram.begin(), real_main_diagram.end(), FeeFrac{});
@@ -785,14 +834,17 @@ FUZZ_TARGET(txgraph)
                 }
                 break;
             } else if (block_builders.size() < 4 && !main_sim.IsOversized() && command-- == 0) {
+                printf("[FUZZ] ********** GetBlockBuilder **********\n");
                 // GetBlockBuilder.
                 block_builders.emplace_back(real->GetBlockBuilder());
                 break;
             } else if (!block_builders.empty() && command-- == 0) {
+                printf("[FUZZ] ********** destroy BlockBuilder **********\n");
                 // ~BlockBuilder.
                 block_builders.erase(block_builders.begin() + builder_idx);
                 break;
             } else if (!block_builders.empty() && command-- == 0) {
+                printf("[FUZZ] ********** BlockBuilder::GetCurrentChunk **********\n");
                 // BlockBuilder::GetCurrentChunk, followed by Include/Skip.
                 auto& builder_data = block_builders[builder_idx];
                 auto new_included = builder_data.included;
@@ -844,6 +896,7 @@ FUZZ_TARGET(txgraph)
                 builder_data.done = new_done;
                 break;
             } else if (!main_sim.IsOversized() && command-- == 0) {
+                printf("[FUZZ] ********** GetWorstMainChunk **********\n");
                 // GetWorstMainChunk.
                 auto [worst_chunk, worst_chunk_feerate] = real->GetWorstMainChunk();
                 // Just do some sanity checks here. Consistency with GetBlockBuilder is checked
@@ -870,6 +923,7 @@ FUZZ_TARGET(txgraph)
                 }
                 break;
             } else if ((block_builders.empty() || sims.size() > 1) && command-- == 0) {
+                printf("[FUZZ] ********** Trim **********\n");
                 // Trim.
                 bool was_oversized = top_sim.IsOversized();
                 auto removed = real->Trim();
@@ -895,6 +949,7 @@ FUZZ_TARGET(txgraph)
                 break;
             } else if ((block_builders.empty() || sims.size() > 1) &&
                        top_sim.GetTransactionCount() > max_cluster_count && !top_sim.IsOversized() && command-- == 0) {
+                printf("[FUZZ] ********** Trim (special case) **********\n");
                 // Trim (special case which avoids apparent cycles in the implicit approximate
                 // dependency graph constructed inside the Trim() implementation). This is worth
                 // testing separately, because such cycles cannot occur in realistic scenarios,
@@ -906,6 +961,7 @@ FUZZ_TARGET(txgraph)
 
                 // Gather the current clusters.
                 auto clusters = top_sim.GetComponents();
+                printf("    before random merges, we have %zu clusters (%d txs in total).\n", clusters.size(), top_sim.GetTransactionCount());
 
                 // Merge clusters randomly until at least one oversized one appears.
                 bool made_oversized = false;
@@ -946,6 +1002,7 @@ FUZZ_TARGET(txgraph)
                         // Add dependency to both simulation and real TxGraph.
                         auto par_ref = top_sim.GetRef(par_pos);
                         auto chl_ref = top_sim.GetRef(chl_pos);
+                        printf("    - AddDependency, parent: %d <- child: %d\n", par_ref->GetGraphIndex(), chl_ref->GetGraphIndex());
                         top_sim.AddDependency(par_ref, chl_ref);
                         real->AddDependency(*par_ref, *chl_ref);
                     }
@@ -969,6 +1026,8 @@ FUZZ_TARGET(txgraph)
                         if (made_oversized) merges_left = rng.randrange(clusters.size());
                     }
                 }
+
+                printf("    after random merges, we have %zu clusters (%d txs in total)\n", top_sim.GetComponents().size(), top_sim.GetTransactionCount());
 
                 // Determine an upper bound on how many transactions are removed.
                 uint32_t max_removed = 0;
@@ -1005,13 +1064,23 @@ FUZZ_TARGET(txgraph)
                 // oversized. Don't query the real graph for oversizedness; it is compared
                 // against the simulation anyway later.
                 for (auto simpos : removed_set) {
+                    printf("    removed tx in sim: %p, %d\n", top_sim.GetRef(simpos)->GetGraph(), top_sim.GetRef(simpos)->GetGraphIndex());
                     top_sim.RemoveTransaction(top_sim.GetRef(simpos));
                 }
                 assert(!top_sim.IsOversized());
+
+                clusters = top_sim.GetComponents();
+                printf("    after trimming, we have %zu clusters (%d txs in total)\n", clusters.size(), top_sim.GetTransactionCount());
+                for (auto& cluster : clusters) {
+                    printf("      - cluster with %d txs\n", cluster.Count());
+                    if (cluster.Count() >= 1) printf("        [first tx index == %d, last tx index == %d]\n", cluster.First(), cluster.Last());
+                }
+
                 break;
             }
         }
     }
+    printf("txgraph fuzz: all modifications done.\n");
 
     // After running all modifications, perform an internal sanity check (before invoking
     // inspectors that may modify the internal state).

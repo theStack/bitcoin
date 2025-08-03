@@ -243,6 +243,9 @@ public:
         // Ref pointing to it.
         Ref& operator=(const Ref&) = delete;
         Ref(const Ref&) = delete;
+
+        TxGraph* GetGraph() const { return m_graph; }
+        GraphIndex GetGraphIndex() const { return m_index; }
     };
 };
 
