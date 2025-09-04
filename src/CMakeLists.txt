@@ -158,6 +158,7 @@ add_library(bitcoin_common STATIC EXCLUDE_FROM_ALL
   common/system.cpp
   common/url.cpp
   compressor.cpp
+  consensus/tx_verify.cpp
   core_read.cpp
   core_write.cpp
   deploymentinfo.cpp
@@ -233,7 +234,6 @@ add_library(bitcoin_node STATIC EXCLUDE_FROM_ALL
   bip324.cpp
   blockencodings.cpp
   blockfilter.cpp
-  consensus/tx_verify.cpp
   dbwrapper.cpp
   deploymentstatus.cpp
   flatfile.cpp
