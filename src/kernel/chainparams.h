@@ -139,6 +139,19 @@ public:
     using RenounceParameters = std::vector<Consensus::BuriedDeployment>;
 
     /**
+     * VersionBitsParameters holds activation parameters
+     */
+    struct VersionBitsParameters {
+        int64_t start_time;
+        int64_t timeout;
+    };
+
+    struct DeploymentOptions {
+        std::unordered_map<Consensus::DeploymentPos, VersionBitsParameters> version_bits_parameters{};
+        std::unordered_map<Consensus::BuriedDeployment, int> activation_heights{};
+    };
+
+    /**
      * SigNetOptions holds configurations for creating a signet CChainParams.
      */
     struct SigNetOptions {
@@ -148,19 +161,10 @@ public:
     };
 
     /**
-     * VersionBitsParameters holds activation parameters
-     */
-    struct VersionBitsParameters {
-        int64_t start_time;
-        int64_t timeout;
-    };
-
-    /**
      * RegTestOptions holds configurations for creating a regtest CChainParams.
      */
     struct RegTestOptions {
-        std::unordered_map<Consensus::DeploymentPos, VersionBitsParameters> version_bits_parameters{};
-        std::unordered_map<Consensus::BuriedDeployment, int> activation_heights{};
+        DeploymentOptions dep_opts{};
         RenounceParameters renounce{};
         bool fastprune{false};
         bool enforce_bip94{false};
@@ -192,6 +196,8 @@ protected:
     CCheckpointData checkpointData;
     std::vector<AssumeutxoData> m_assumeutxo_data;
     ChainTxData chainTxData;
+
+    void ApplyDeploymentOptions(const DeploymentOptions& opts);
 };
 
 std::optional<ChainType> GetNetworkForMagic(const MessageStartChars& pchMessageStart);
