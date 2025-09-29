@@ -1343,6 +1343,16 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
     const ArgsManager& args = *Assert(node.args);
     const CChainParams& chainparams = Params();
 
+    // Prevent setting deployment parameters on mainnet.
+    if (chainparams.GetChainType() == ChainType::MAIN) {
+        if (args.IsArgSet("-testactivationheight")) {
+            return InitError(_("The -testactivationheight option may not be used on mainnet."));
+        }
+        if (args.IsArgSet("-vbparams")) {
+            return InitError(_("The -vbparams option may not be used on mainnet."));
+        }
+    }
+
     // Disallow mainnet/testnet operation
     if (Params().GetChainType() == ChainType::MAIN || Params().GetChainType() == ChainType::TESTNET) {
         return InitError(Untranslated(strprintf("Selected network '%s' is unsupported for this client, select -regtest or -signet instead.\n", Params().GetChainTypeString())));
