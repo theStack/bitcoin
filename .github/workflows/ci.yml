@@ -291,6 +291,10 @@ jobs:
           key: ${{ github.job }}-ccache-${{ github.run_id }}
           restore-keys: ${{ github.job }}-ccache-
 
+      - name: Clear unnecessary files
+        if: ${{ needs.runners.outputs.provider == 'gha' && true || false }} # Only needed on GHA runners
+        uses: ./.github/actions/clear-files
+
       - name: Enable bpfcc script
         # In the image build step, no external environment variables are available,
         # so any settings will need to be written to the settings env file:
