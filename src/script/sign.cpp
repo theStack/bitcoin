@@ -265,9 +265,16 @@ static bool CreateSig(const BaseSignatureCreator& creator, SignatureData& sigdat
     return false;
 }
 
-static bool SignMuSig2(const BaseSignatureCreator& creator, SignatureData& sigdata, const SigningProvider& provider, std::vector<unsigned char>& sig_out, const KeyOriginInfo& agg_info, const XOnlyPubKey& script_pubkey, const uint256* merkle_root, const uint256* leaf_hash, SigVersion sigversion)
+static bool SignMuSig2(const BaseSignatureCreator& creator, SignatureData& sigdata, const SigningProvider& provider, std::vector<unsigned char>& sig_out, const XOnlyPubKey& script_pubkey, const uint256* merkle_root, const uint256* leaf_hash, SigVersion sigversion)
 {
     Assert(sigversion == SigVersion::TAPROOT || sigversion == SigVersion::TAPSCRIPT);
+
+    // Lookup derivation paths for this key
+    KeyOriginInfo agg_info;
+    auto misc_pk_it = sigdata.taproot_misc_pubkeys.find(script_pubkey);
+    if (misc_pk_it != sigdata.taproot_misc_pubkeys.end()) {
+        agg_info = misc_pk_it->second.second;
+    }
 
     for (const auto& [agg_pub, part_pks] : sigdata.musig2_pubkeys) {
         if (part_pks.empty()) continue;
@@ -374,11 +381,7 @@ static bool CreateTaprootScriptSig(const BaseSignatureCreator& creator, Signatur
     if (creator.CreateSchnorrSig(provider, sig_out, pubkey, &leaf_hash, nullptr, sigversion)) {
         sigdata.taproot_script_sigs[lookup_key] = sig_out;
     } else {
-        auto misc_pk_it = sigdata.taproot_misc_pubkeys.find(pubkey);
-        if (misc_pk_it != sigdata.taproot_misc_pubkeys.end()) {
-            info = misc_pk_it->second.second;
-        }
-        if (!SignMuSig2(creator, sigdata, provider, sig_out, info, pubkey, /*merkle_root=*/nullptr, &leaf_hash, sigversion)) return false;
+        if (!SignMuSig2(creator, sigdata, provider, sig_out, pubkey, /*merkle_root=*/nullptr, &leaf_hash, sigversion)) return false;
     }
 
     return sigdata.taproot_script_sigs.contains(lookup_key);
@@ -578,13 +581,7 @@ static bool SignTaproot(const SigningProvider& provider, const BaseSignatureCrea
             if (creator.CreateSchnorrSig(provider, sig, pk, nullptr, merkle_root, SigVersion::TAPROOT)) {
                 sigdata.taproot_key_path_sig = sig;
             } else {
-                // Lookup derivation paths for this key
-                KeyOriginInfo info;
-                auto misc_pk_it = sigdata.taproot_misc_pubkeys.find(pk);
-                if (misc_pk_it != sigdata.taproot_misc_pubkeys.end()) {
-                    info = misc_pk_it->second.second;
-                }
-                SignMuSig2(creator, sigdata, provider, sig, info, pk, merkle_root, /*leaf_hash=*/nullptr, SigVersion::TAPROOT);
+                SignMuSig2(creator, sigdata, provider, sig, pk, merkle_root, /*leaf_hash=*/nullptr, SigVersion::TAPROOT);
             }
         };
 
