@@ -1021,6 +1021,9 @@ BOOST_AUTO_TEST_CASE(test_IsStandard)
 
 BOOST_AUTO_TEST_CASE(max_standard_legacy_sigops)
 {
+    TxValidationState state;
+    const int dummy_height{0};
+    CAmount dummy_fee;
     CCoinsView coins_dummy;
     CCoinsViewCache coins(&coins_dummy);
     CKey key;
@@ -1052,7 +1055,8 @@ BOOST_AUTO_TEST_CASE(max_standard_legacy_sigops)
 
     // 2490 sigops is below the limit.
     BOOST_CHECK_EQUAL(GetP2SHSigOpCount(CTransaction(tx_max_sigops), coins), 2490);
-    BOOST_CHECK(::AreInputsStandard(CTransaction(tx_max_sigops), coins));
+    BOOST_CHECK(Consensus::CheckTxInputs(CTransaction(tx_max_sigops), state, coins, dummy_height, dummy_fee, /*enforce_bip54=*/true));
+    BOOST_CHECK(state.IsValid());
 
     // Adding one more input will bump this to 2505, hitting the limit.
     tx_create.vout.emplace_back(424242, max_sigops_p2sh);
@@ -1064,7 +1068,9 @@ BOOST_AUTO_TEST_CASE(max_standard_legacy_sigops)
     AddCoins(coins, CTransaction(tx_create), 0, false);
     BOOST_CHECK_GT((p2sh_inputs_count + 1) * MAX_P2SH_SIGOPS, MAX_TX_BIP54_SIGOPS);
     BOOST_CHECK_EQUAL(GetP2SHSigOpCount(CTransaction(tx_max_sigops), coins), 2505);
-    BOOST_CHECK(!::AreInputsStandard(CTransaction(tx_max_sigops), coins));
+    BOOST_CHECK(!Consensus::CheckTxInputs(CTransaction(tx_max_sigops), state, coins, dummy_height, dummy_fee, /*enforce_bip54=*/true));
+    BOOST_CHECK(state.IsInvalid());
+    state = TxValidationState{};
 
     // Now, check the limit can be reached with regular P2PK outputs too. Use a separate
     // preparation transaction, to demonstrate spending coins from a single tx is irrelevant.
@@ -1083,7 +1089,8 @@ BOOST_AUTO_TEST_CASE(max_standard_legacy_sigops)
 
     // The transaction now contains exactly 2500 sigops, the check should pass.
     BOOST_CHECK_EQUAL(p2sh_inputs_count * MAX_P2SH_SIGOPS + p2pk_inputs_count * 1, MAX_TX_BIP54_SIGOPS);
-    BOOST_CHECK(::AreInputsStandard(CTransaction(tx_max_sigops), coins));
+    BOOST_CHECK(Consensus::CheckTxInputs(CTransaction(tx_max_sigops), state, coins, dummy_height, dummy_fee, /*enforce_bip54=*/true));
+    BOOST_CHECK(state.IsValid());
 
     // Now, add some Segwit inputs. We add one for each defined Segwit output type. The limit
     // is exclusively on non-witness sigops and therefore those should not be counted.
@@ -1099,7 +1106,8 @@ BOOST_AUTO_TEST_CASE(max_standard_legacy_sigops)
 
     // The transaction now still contains exactly 2500 sigops, the check should pass.
     AddCoins(coins, CTransaction(tx_create_segwit), 0, false);
-    BOOST_REQUIRE(::AreInputsStandard(CTransaction(tx_max_sigops), coins));
+    BOOST_CHECK(Consensus::CheckTxInputs(CTransaction(tx_max_sigops), state, coins, dummy_height, dummy_fee, /*enforce_bip54=*/true));
+    BOOST_CHECK(state.IsValid());
 
     // Add one more P2PK input. We'll reach the limit.
     tx_create_p2pk.vout.emplace_back(212121, p2pk_script);
@@ -1111,7 +1119,8 @@ BOOST_AUTO_TEST_CASE(max_standard_legacy_sigops)
     }
     AddCoins(coins, CTransaction(tx_create_p2pk), 0, false);
     BOOST_CHECK_GT(p2sh_inputs_count * MAX_P2SH_SIGOPS + p2pk_inputs_count * 1, MAX_TX_BIP54_SIGOPS);
-    BOOST_CHECK(!::AreInputsStandard(CTransaction(tx_max_sigops), coins));
+    BOOST_CHECK(!Consensus::CheckTxInputs(CTransaction(tx_max_sigops), state, coins, dummy_height, dummy_fee, /*enforce_bip54=*/true));
+    BOOST_CHECK(state.IsInvalid());
 }
 
 BOOST_AUTO_TEST_SUITE_END()

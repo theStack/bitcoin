@@ -181,17 +181,11 @@ bool IsStandardTx(const CTransaction& tx, const std::optional<unsigned>& max_dat
  *   DUP CHECKSIG DROP ... repeated 100 times... OP_1
  *
  * Note that only the non-witness portion of the transaction is checked here.
- *
- * We also check the total number of non-witness sigops across the whole transaction, as per BIP54.
  */
 bool AreInputsStandard(const CTransaction& tx, const CCoinsViewCache& mapInputs)
 {
     if (tx.IsCoinBase()) {
         return true; // Coinbases don't use vin normally
-    }
-
-    if (!Consensus::CheckSigopsBIP54(tx, mapInputs)) {
-        return false;
     }
 
     for (unsigned int i = 0; i < tx.vin.size(); i++) {
