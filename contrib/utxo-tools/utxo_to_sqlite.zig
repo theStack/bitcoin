@@ -177,6 +177,12 @@ pub fn main() !void {
     }
 
     // TODO: read in metadata from input file
+    var io_buf: [64 * 1024]u8 = undefined;
+    const reader_obj = infile.reader(&io_buf);
+    var reader = reader_obj.interface;
+    std.debug.print("before reading\n", .{});
+    const magic_bytes = try reader.takeArray(5);
+    std.debug.print("magic bytes: {x}\n", .{magic_bytes});
     // TODO: implement coins conversion loop
     // TODO: write summary at the end
 }
