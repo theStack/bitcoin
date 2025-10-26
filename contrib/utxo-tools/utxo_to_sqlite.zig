@@ -93,8 +93,13 @@ fn decompressScript(r: *io.Reader, fba: mem.Allocator) ![]u8 {
         return script;
     } else if (id == 4 or id == 5) {  // P2PK (uncompressed)
         var script = try fba.alloc(u8, 67);
+        var compressed_pubkey: [33]u8 = undefined;
+        const prefix_byte: u8 = @intCast(id - 2);
+        compressed_pubkey[0] = prefix_byte;
+        @memcpy(compressed_pubkey[1..], try r.takeArray(32));
+        const full_pubkey = decompressPubkey(&compressed_pubkey);
         @memcpy(script[0..1], &[_]u8{ 65 });
-        // TODO: decompress actual pubkey, copy to script[1..65]
+        @memcpy(script[1..66], &full_pubkey);
         @memcpy(script[66..67], &[_]u8{ 0xac });
         return script;
     } else {  // others (bare multisig, segwit etc.)
@@ -123,10 +128,11 @@ pub fn fastExpMod(base: u256, exponent: u256) u256 {
 
 // Decompress pubkey by calculating y = sqrt(x^3 + 7) % p
 // (see functions `secp256k1_eckey_pubkey_parse` and `secp256k1_ge_set_xo_var`).
-fn decompressPubkey(compressed_pubkey: [33]u8) [65]u8 {
+fn decompressPubkey(compressed_pubkey: []u8) [65]u8 {
+    std.debug.assert(compressed_pubkey.len == 33);
     std.debug.assert(compressed_pubkey[0] == 2 or compressed_pubkey[0] == 3);
     const x = mem.readInt(u256, compressed_pubkey[1..33], .big);
-    const rhs: u256 = (@as(u257, fastExpMod(x, 3)) + 7) % SECP256K1_P;
+    const rhs: u256 = @intCast((@as(u257, fastExpMod(x, 3)) + 7) % SECP256K1_P);
     var y = fastExpMod(rhs, (SECP256K1_P+1)/4); // get sqrt using Tonelli-Shanks algorithm (for p % 4 = 3)
     std.debug.assert(fastExpMod(y, 2) == rhs); // TODO: throw error if this happens?
     const tag_is_odd = compressed_pubkey[0] == 3;
@@ -208,7 +214,42 @@ pub fn main() !void {
     std.debug.print("UTXO Snapshot for {s} at block hash {x}..., contains {d} coins\n",
         .{network_name, block_hash_reverse[0..16], num_utxos});
 
+    // TODO: get current time
+    var coins_per_hash_left: u64 = 0;
+    var prevout_hash: [32]u8 = undefined;
+    var max_height: u64 = 0;
     // TODO: implement coins conversion loop
+
+    var script_buf: [10000]u8 = undefined;
+    var fba = std.heap.FixedBufferAllocator.init(&script_buf);
+    const alloc = fba.allocator();
+
+    for (1..num_utxos+1) |coin_idx| {
+        // read key (COutPoint)
+        if (coins_per_hash_left == 0) { // read next prevout hash
+            try reader.readSliceAll(&prevout_hash);
+            coins_per_hash_left = try readCompactSize(reader);
+        }
+        const prevout_index = try readCompactSize(reader);
+        // read value (Coin)
+        const code = try readVarInt(reader);
+        const height = code >> 1;
+        const is_coinbase = (code & 1) == 1;
+        const amount = decompressAmount(try readVarInt(reader));
+        fba.reset();
+        const scriptpubkey = try decompressScript(reader, alloc);
+        // TODO: add to writing batch
+        if (height > max_height) {
+            max_height = height;
+        }
+        coins_per_hash_left -= 1;
+
+        _ = prevout_index;
+        _ = is_coinbase;
+        if (coin_idx % (16*1024) == 0) {
+            std.debug.print("coin {d}/{d} amount: {d}, spk: {x}\n", .{coin_idx, num_utxos, amount, scriptpubkey});
+        }
+    }
     // TODO: write summary at the end
 }
 
