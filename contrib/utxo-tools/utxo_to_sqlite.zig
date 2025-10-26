@@ -176,13 +176,23 @@ pub fn main() !void {
         std.process.exit(4);
     }
 
-    // TODO: read in metadata from input file
+    // prepare file reading
     var io_buf: [64 * 1024]u8 = undefined;
-    const reader_obj = infile.reader(&io_buf);
-    var reader = reader_obj.interface;
-    std.debug.print("before reading\n", .{});
+    var infile_reader = infile.reader(&io_buf);
+    var reader = &infile_reader.interface;
+
+    // read in metadata (magic bytes, version, network magic, block hash, UTXO count)
     const magic_bytes = try reader.takeArray(5);
+    const version = mem.readInt(u16, try reader.takeArray(2), .little);
+    const network_magic = try reader.takeArray(4);
+    const block_hash = try reader.takeArray(32);
+    const num_utxos = mem.readInt(u64, try reader.takeArray(8), .little);
     std.debug.print("magic bytes: {x}\n", .{magic_bytes});
+    std.debug.print("version: {d}\n", .{version});
+    std.debug.print("network magic: {x}\n", .{network_magic});
+    std.debug.print("block hash: {x}\n", .{block_hash});
+    std.debug.print("number of UTXOs: {d}\n", .{num_utxos});
+
     // TODO: implement coins conversion loop
     // TODO: write summary at the end
 }
