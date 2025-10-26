@@ -11,14 +11,14 @@ const UTXO_DUMP_VERSION: u16 = 2;
 
 const NetworkEntry = struct {
     net_magic: [4]u8,
-    description: []u8,
+    description: []const u8,
 };
 const NETWORKS = [_]NetworkEntry {
-    .{ .{0xf9,0xbe,0xb4,0xd9}, "Mainnet" },
-    .{ .{0x0a,0x03,0xcf,0x40}, "Signet" },
-    .{ .{0x0b,0x11,0x09,0x07}, "Testnet3" },
-    .{ .{0x1c,0x16,0x3f,0x28}, "Testnet4" },
-    .{ .{0xfa,0xbf,0xb5,0xda}, "Regtest" },
+    .{ .net_magic = .{0xf9,0xbe,0xb4,0xd9}, .description = "Mainnet" },
+    .{ .net_magic = .{0x0a,0x03,0xcf,0x40}, .description = "Signet" },
+    .{ .net_magic = .{0x0b,0x11,0x09,0x07}, .description = "Testnet3" },
+    .{ .net_magic = .{0x1c,0x16,0x3f,0x28}, .description = "Testnet4" },
+    .{ .net_magic = .{0xfa,0xbf,0xb5,0xda}, .description = "Regtest" },
 };
 
 // Equivalent of `ReadVarInt()` (see serialization module).
@@ -187,11 +187,26 @@ pub fn main() !void {
     const network_magic = try reader.takeArray(4);
     const block_hash = try reader.takeArray(32);
     const num_utxos = mem.readInt(u64, try reader.takeArray(8), .little);
-    std.debug.print("magic bytes: {x}\n", .{magic_bytes});
-    std.debug.print("version: {d}\n", .{version});
-    std.debug.print("network magic: {x}\n", .{network_magic});
-    std.debug.print("block hash: {x}\n", .{block_hash});
-    std.debug.print("number of UTXOs: {d}\n", .{num_utxos});
+    if (!mem.eql(u8, magic_bytes, &UTXO_DUMP_MAGIC)) {
+        std.debug.print("Error: provided input file '{s}' is not an UTXO dump.\n", .{infile_path});
+        std.process.exit(5);
+    }
+    if (version != UTXO_DUMP_VERSION) {
+        std.debug.print("Error: provided input file '{s}' has unknown UTXO dump version {d} " ++
+            "(only version {d} supported)\n" , .{infile_path, version, UTXO_DUMP_VERSION});
+        std.process.exit(5);
+    }
+    var network_name: []const u8 = "unknown network"; // TODO: include magic bytes in string if unknown
+    for (0..NETWORKS.len) |i| {
+        if (std.mem.eql(u8, network_magic, &NETWORKS[i].net_magic)) {
+            network_name = NETWORKS[i].description;
+            break;
+        }
+    }
+    var block_hash_reverse = block_hash;
+    std.mem.reverse(u8, block_hash_reverse);
+    std.debug.print("UTXO Snapshot for {s} at block hash {x}..., contains {d} coins\n",
+        .{network_name, block_hash_reverse[0..16], num_utxos});
 
     // TODO: implement coins conversion loop
     // TODO: write summary at the end
