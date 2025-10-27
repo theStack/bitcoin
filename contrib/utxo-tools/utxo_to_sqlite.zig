@@ -148,8 +148,6 @@ fn decompressPubkey(compressed_pubkey: []u8) [65]u8 {
 }
 
 pub fn main() !void {
-    try testit();
-
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     const allocator = gpa.allocator();
     const args = try std.process.argsAlloc(allocator);
@@ -214,15 +212,21 @@ pub fn main() !void {
     std.debug.print("UTXO Snapshot for {s} at block hash {x}..., contains {d} coins\n",
         .{network_name, block_hash_reverse[0..16], num_utxos});
 
-    // TODO: get current time
+    const start_time = std.time.nanoTimestamp();
     var coins_per_hash_left: u64 = 0;
     var prevout_hash: [32]u8 = undefined;
     var max_height: u64 = 0;
-    // TODO: implement coins conversion loop
+    var inserts_in_batch: u64 = 0;
 
     var script_buf: [10000]u8 = undefined;
     var fba = std.heap.FixedBufferAllocator.init(&script_buf);
     const alloc = fba.allocator();
+    var insert_stmt: ?*s.sqlite3_stmt = null;
+    if (s.sqlite3_prepare_v2(db, "INSERT INTO utxos VALUES(?, ?, ?, ?, ?, ?)", -1, &insert_stmt, null) != s.SQLITE_OK) {
+        std.debug.print("Couldn't prepare SQLite3 insert statement.\n", .{});
+        std.process.exit(6);
+    }
+    defer _ = s.sqlite3_finalize(insert_stmt);
 
     for (1..num_utxos+1) |coin_idx| {
         // read key (COutPoint)
@@ -244,31 +248,42 @@ pub fn main() !void {
         }
         coins_per_hash_left -= 1;
 
-        _ = prevout_index;
-        _ = is_coinbase;
-        if (coin_idx % (16*1024) == 0) {
-            std.debug.print("coin {d}/{d} amount: {d}, spk: {x}\n", .{coin_idx, num_utxos, amount, scriptpubkey});
+        var ret: c_int = undefined;
+        if (inserts_in_batch == 0) {
+            ret = s.sqlite3_exec(db, "BEGIN TRANSACTION", null, null, null);
+            std.debug.assert(ret == s.SQLITE_OK);
+        }
+        ret = s.sqlite3_reset(insert_stmt);
+        std.debug.assert(ret == s.SQLITE_OK);
+        // ret = s.sqlite3_clear_bindings(insert_stmt);
+        // std.debug.assert(ret == s.SQLITE_OK);
+        ret = s.sqlite3_bind_blob(insert_stmt, 1, (&prevout_hash).ptr, (&prevout_hash).len, s.SQLITE_STATIC);
+        std.debug.assert(ret == s.SQLITE_OK);
+        ret = s.sqlite3_bind_int(insert_stmt, 2, @intCast(prevout_index));
+        std.debug.assert(ret == s.SQLITE_OK);
+        ret = s.sqlite3_bind_int64(insert_stmt, 3, @intCast(amount));
+        std.debug.assert(ret == s.SQLITE_OK);
+        ret = s.sqlite3_bind_int(insert_stmt, 4, if (is_coinbase) 1 else 0);
+        std.debug.assert(ret == s.SQLITE_OK);
+        ret = s.sqlite3_bind_int(insert_stmt, 5, @intCast(height));
+        std.debug.assert(ret == s.SQLITE_OK);
+        ret = s.sqlite3_bind_blob(insert_stmt, 6, scriptpubkey.ptr, @intCast(scriptpubkey.len), s.SQLITE_STATIC);
+        std.debug.assert(ret == s.SQLITE_OK);
+        if (s.sqlite3_step(insert_stmt) != s.SQLITE_DONE) {
+            std.debug.print("Error: INSERT failed.\n", .{});
+            std.process.exit(7);
+        }
+        if (inserts_in_batch == 500 or coin_idx == num_utxos) {
+            ret = s.sqlite3_exec(db, "COMMIT", null, null, null);
+            std.debug.assert(ret == s.SQLITE_OK);
+            inserts_in_batch = 0;
+        }
+        if (coin_idx % (1024*1024) == 0) {
+            const elapsed_s = @as(f64, @floatFromInt(std.time.nanoTimestamp() - start_time))/1_000_000_000.0;
+            std.debug.print("{d} coins converted [{d:.2}%], {d:.3}s passed since start\n",
+                .{coin_idx, @as(f64, @floatFromInt(coin_idx))/@as(f64, @floatFromInt(num_utxos))*100.0, elapsed_s});
         }
     }
-    // TODO: write summary at the end
-}
-
-pub fn testit() !void {
-    //const some_file = try fs.cwd().openFile("./example/block_919180.bin", .{});
-    const some_file = try fs.openFileAbsolute("/home/thestack/.bashrc", .{});
-    defer some_file.close();
-    var io_buf: [4096]u8 = undefined;
-    var reader_obj = some_file.reader(&io_buf);
-    const ret = try readVarInt(&reader_obj.interface);
-    std.debug.print("varint read: {d}\n", .{ret});
-    const ret2 = try readCompactSize(&reader_obj.interface);
-    std.debug.print("compactsize read: {d}\n", .{ret2});
-    const ret3 = decompressAmount(0x1406f40);
-    std.debug.print("amount decompress: {d}\n", .{ret3});
-    var script_buf: [10000]u8 = undefined;
-    var fba = std.heap.FixedBufferAllocator.init(&script_buf);
-    const compr_script: [21]u8 = .{0x00} ++ ([_]u8{23} ** 20);
-    var fixed_reader = io.Reader.fixed(&compr_script);
-    const script = try decompressScript(&fixed_reader, fba.allocator());
-    std.debug.print("decompressed script: {x}\n", .{script});
+    std.debug.print("TOTAL: {d} coins written to {s}, snapshot height is {d}.\n", .{num_utxos, outfile_path, max_height});
+    // TODO: write warning if EOF is not reached yet from input file
 }
