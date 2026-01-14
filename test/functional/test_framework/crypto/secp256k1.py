@@ -21,7 +21,11 @@ from pathlib import Path
 import sys
 
 # Prefer the vendored copy of secp256k1lab.
+print(f"*** sys.path before: ***")
+print(sys.path)
 sys.path.insert(0, str(Path(__file__).resolve().parent / "../../../secp256k1lab/src"))
+print(f"*** sys.path after: ***")
+print(sys.path)
 from secp256k1lab.secp256k1 import FE, G, GE, Scalar  # type: ignore[import]
 
 __all__ = ["FE", "G", "GE", "Scalar"]
