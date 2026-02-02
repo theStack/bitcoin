@@ -20,6 +20,8 @@
 
 using namespace util::hex_literals;
 
+extern secp256k1_context* secp256k1_context_sign;
+
 namespace {
 
 struct Secp256k1SelfTester
@@ -238,7 +240,7 @@ bool XOnlyPubKey::VerifySchnorr(const uint256& msg, std::span<const unsigned cha
     assert(sigbytes.size() == 64);
     secp256k1_xonly_pubkey pubkey;
     if (!secp256k1_xonly_pubkey_parse(secp256k1_context_static, &pubkey, m_keydata.data())) return false;
-    return secp256k1_schnorrsig_verify(secp256k1_context_static, sigbytes.data(), msg.begin(), 32, &pubkey);
+    return secp256k1_schnorrsig_verify(secp256k1_context_sign, sigbytes.data(), msg.begin(), 32, &pubkey);
 }
 
 static const HashWriter HASHER_TAPTWEAK{TaggedHash("TapTweak")};
@@ -294,7 +296,7 @@ bool CPubKey::Verify(const uint256 &hash, const std::vector<unsigned char>& vchS
     /* libsecp256k1's ECDSA verification requires lower-S signatures, which have
      * not historically been enforced in Bitcoin, so normalize them first. */
     secp256k1_ecdsa_signature_normalize(secp256k1_context_static, &sig, &sig);
-    return secp256k1_ecdsa_verify(secp256k1_context_static, &sig, hash.begin(), &pubkey);
+    return secp256k1_ecdsa_verify(secp256k1_context_sign, &sig, hash.begin(), &pubkey);
 }
 
 bool CPubKey::RecoverCompact(const uint256 &hash, const std::vector<unsigned char>& vchSig) {
