@@ -150,13 +150,7 @@ static int have_invalid_args(int argc, char** argv, char** valid_args, size_t n)
 static int get_iters(int default_iters) {
     char* env = getenv("SECP256K1_BENCH_ITERS");
     if (env) {
-        char* endptr;
-        long int iters = strtol(env, &endptr, 0);
-        if (*endptr != '\0' || iters <= 0) {
-            printf("Error: Value of SECP256K1_BENCH_ITERS is not a positive integer: %s\n\n", env);
-            return 0;
-        }
-        return iters;
+        return strtol(env, NULL, 0);
     } else {
         return default_iters;
     }

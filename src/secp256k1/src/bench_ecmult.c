@@ -19,11 +19,8 @@
 
 #define POINTS 32768
 
-static void help(char **argv, int default_iters) {
+static void help(char **argv) {
     printf("Benchmark EC multiplication algorithms\n");
-    printf("\n");
-    printf("The default number of iterations for each benchmark is %d. This can be\n", default_iters);
-    printf("customized using the SECP256K1_BENCH_ITERS environment variable.\n");
     printf("\n");
     printf("Usage: %s <help|pippenger_wnaf|strauss_wnaf|simple>\n", argv[0]);
     printf("The output shows the number of multiplied and summed points right after the\n");
@@ -259,7 +256,7 @@ static void bench_ecmult_multi_teardown(void* arg, int iters) {
     }
 }
 
-static void generate_scalar(uint32_t num, secp256k1_scalar* scalar) {
+static void generate_scalar(const secp256k1_context *ctx, uint32_t num, secp256k1_scalar* scalar) {
     secp256k1_sha256 sha256;
     unsigned char c[10] = {'e', 'c', 'm', 'u', 'l', 't', 0, 0, 0, 0};
     unsigned char buf[32];
@@ -269,8 +266,8 @@ static void generate_scalar(uint32_t num, secp256k1_scalar* scalar) {
     c[8] = num >> 16;
     c[9] = num >> 24;
     secp256k1_sha256_initialize(&sha256);
-    secp256k1_sha256_write(&sha256, c, sizeof(c));
-    secp256k1_sha256_finalize(&sha256, buf);
+    secp256k1_sha256_write(secp256k1_get_hash_context(ctx), &sha256, c, sizeof(c));
+    secp256k1_sha256_finalize(secp256k1_get_hash_context(ctx), &sha256, buf);
     secp256k1_scalar_set_b32(scalar, buf, &overflow);
     CHECK(!overflow);
 }
@@ -311,12 +308,7 @@ int main(int argc, char **argv) {
     int i, p;
     size_t scratch_size;
 
-    int default_iters = 10000;
-    int iters = get_iters(default_iters);
-    if (iters == 0) {
-        help(argv, default_iters);
-        return EXIT_FAILURE;
-    }
+    int iters = get_iters(10000);
 
     data.ecmult_multi = secp256k1_ecmult_multi_var;
 
@@ -324,7 +316,7 @@ int main(int argc, char **argv) {
         if(have_flag(argc, argv, "-h")
            || have_flag(argc, argv, "--help")
            || have_flag(argc, argv, "help")) {
-            help(argv, default_iters);
+            help(argv);
             return EXIT_SUCCESS;
         } else if(have_flag(argc, argv, "pippenger_wnaf")) {
             printf("Using pippenger_wnaf:\n");
@@ -336,7 +328,7 @@ int main(int argc, char **argv) {
             printf("Using simple algorithm:\n");
         } else {
             fprintf(stderr, "%s: unrecognized argument '%s'.\n\n", argv[0], argv[1]);
-            help(argv, default_iters);
+            help(argv);
             return EXIT_FAILURE;
         }
     }
@@ -362,7 +354,7 @@ int main(int argc, char **argv) {
     secp256k1_gej_set_ge(&data.pubkeys_gej[0], &secp256k1_ge_const_g);
     secp256k1_scalar_set_int(&data.seckeys[0], 1);
     for (i = 0; i < POINTS; ++i) {
-        generate_scalar(i, &data.scalars[i]);
+        generate_scalar(data.ctx, i, &data.scalars[i]);
         if (i) {
             secp256k1_gej_double_var(&data.pubkeys_gej[i], &data.pubkeys_gej[i - 1], NULL);
             secp256k1_scalar_add(&data.seckeys[i], &data.seckeys[i - 1], &data.seckeys[i - 1]);
@@ -389,8 +381,6 @@ int main(int argc, char **argv) {
                 run_ecmult_multi_bench(&data, i << p, 1, iters);
             }
         }
-    } else {
-        printf("Skipping some benchmarks due to SECP256K1_BENCH_ITERS <= 2\n");
     }
 
     if (data.scratch != NULL) {

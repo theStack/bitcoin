@@ -70,12 +70,12 @@
  *  Lastly the zr[0] value, which isn't used above, is set so that:
  *  - a.z = z(pre_a[0]) / zr[0]
  */
-static void secp256k1_ecmult_odd_multiples_table(size_t n, secp256k1_ge *pre_a, secp256k1_fe *zr, secp256k1_fe *z, const secp256k1_gej *a) {
+static void secp256k1_ecmult_odd_multiples_table(int n, secp256k1_ge *pre_a, secp256k1_fe *zr, secp256k1_fe *z, const secp256k1_gej *a) {
     secp256k1_gej d, ai;
     secp256k1_ge d_ge;
-    size_t i;
+    int i;
 
-    VERIFY_CHECK(!secp256k1_gej_is_infinity(a));
+    VERIFY_CHECK(!a->infinity);
 
     secp256k1_gej_double_var(&d, a, NULL);
 
@@ -311,9 +311,8 @@ static void secp256k1_ecmult_strauss_wnaf(const struct secp256k1_strauss_state *
     }
 
     for (np = 0; np < no; ++np) {
-        size_t j;
-        for (j = 0; j < ECMULT_TABLE_SIZE(WINDOW_A); j++) {
-            secp256k1_fe_mul(&state->aux[np * ECMULT_TABLE_SIZE(WINDOW_A) + j], &state->pre_a[np * ECMULT_TABLE_SIZE(WINDOW_A) + j].x, &secp256k1_const_beta);
+        for (i = 0; i < ECMULT_TABLE_SIZE(WINDOW_A); i++) {
+            secp256k1_fe_mul(&state->aux[np * ECMULT_TABLE_SIZE(WINDOW_A) + i], &state->pre_a[np * ECMULT_TABLE_SIZE(WINDOW_A) + i].x, &secp256k1_const_beta);
         }
     }
 
@@ -357,7 +356,7 @@ static void secp256k1_ecmult_strauss_wnaf(const struct secp256k1_strauss_state *
         }
     }
 
-    if (!secp256k1_gej_is_infinity(r)) {
+    if (!r->infinity) {
         secp256k1_fe_mul(&r->z, &r->z, &Z);
     }
 }
@@ -518,6 +517,7 @@ static int secp256k1_ecmult_pippenger_wnaf(secp256k1_gej *buckets, int bucket_wi
     size_t np;
     size_t no = 0;
     int i;
+    int j;
 
     for (np = 0; np < num; ++np) {
         if (secp256k1_scalar_is_zero(&sc[np]) || secp256k1_ge_is_infinity(&pt[np])) {
@@ -535,17 +535,16 @@ static int secp256k1_ecmult_pippenger_wnaf(secp256k1_gej *buckets, int bucket_wi
 
     for (i = n_wnaf - 1; i >= 0; i--) {
         secp256k1_gej running_sum;
-        int j;
-        size_t buc;
 
-        for (buc = 0; buc < ECMULT_TABLE_SIZE(bucket_window+2); buc++) {
-            secp256k1_gej_set_infinity(&buckets[buc]);
+        for(j = 0; j < ECMULT_TABLE_SIZE(bucket_window+2); j++) {
+            secp256k1_gej_set_infinity(&buckets[j]);
         }
 
         for (np = 0; np < no; ++np) {
             int n = state->wnaf_na[np*n_wnaf + i];
             struct secp256k1_pippenger_point_state point_state = state->ps[np];
             secp256k1_ge tmp;
+            int idx;
 
             if (i == 0) {
                 /* correct for wnaf skew */
@@ -556,16 +555,16 @@ static int secp256k1_ecmult_pippenger_wnaf(secp256k1_gej *buckets, int bucket_wi
                 }
             }
             if (n > 0) {
-                buc = (n - 1)/2;
-                secp256k1_gej_add_ge_var(&buckets[buc], &buckets[buc], &pt[point_state.input_pos], NULL);
+                idx = (n - 1)/2;
+                secp256k1_gej_add_ge_var(&buckets[idx], &buckets[idx], &pt[point_state.input_pos], NULL);
             } else if (n < 0) {
-                buc = -(n + 1)/2;
+                idx = -(n + 1)/2;
                 secp256k1_ge_neg(&tmp, &pt[point_state.input_pos]);
-                secp256k1_gej_add_ge_var(&buckets[buc], &buckets[buc], &tmp, NULL);
+                secp256k1_gej_add_ge_var(&buckets[idx], &buckets[idx], &tmp, NULL);
             }
         }
 
-        for (j = 0; j < bucket_window; j++) {
+        for(j = 0; j < bucket_window; j++) {
             secp256k1_gej_double_var(r, r, NULL);
         }
 
@@ -578,8 +577,8 @@ static int secp256k1_ecmult_pippenger_wnaf(secp256k1_gej *buckets, int bucket_wi
          *
          * The doubling is done implicitly by deferring the final window doubling (of 'r').
          */
-        for (buc = ECMULT_TABLE_SIZE(bucket_window+2) - 1; buc > 0; buc--) {
-            secp256k1_gej_add_var(&running_sum, &running_sum, &buckets[buc], NULL);
+        for(j = ECMULT_TABLE_SIZE(bucket_window+2) - 1; j > 0; j--) {
+            secp256k1_gej_add_var(&running_sum, &running_sum, &buckets[j], NULL);
             secp256k1_gej_add_var(r, r, &running_sum, NULL);
         }
 
