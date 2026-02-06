@@ -939,7 +939,7 @@ BOOST_AUTO_TEST_CASE(script_json_test)
                 // We use #SCRIPT# to flag a non-hex script that we can read using ParseScript
                 // Taproot script must be third from the last element in witness stack
                 std::string scriptFlag = std::string("#SCRIPT#");
-                if (element.find(scriptFlag) == 0) {
+                if (element.starts_with(scriptFlag)) {
                     CScript script = ParseScript(element.substr(scriptFlag.size()));
                     witness.stack.push_back(ToByteVector(script));
                 } else if (strcmp(element.c_str(), "#CONTROLBLOCK#") == 0) {
@@ -1801,8 +1801,8 @@ BOOST_AUTO_TEST_CASE(cat_empty_stack)
 {
     // Ensures that OP_CAT successfully handles concatenating two empty stack elements
     std::vector<std::vector<unsigned char>> witData;
-    witData.push_back({});
-    witData.push_back({});
+    witData.emplace_back();
+    witData.emplace_back();
     std::vector<unsigned char> witVerifyScript = {OP_CAT, OP_PUSHDATA1, 0x00,OP_EQUAL};
     DoTapscriptTest(*this, witVerifyScript, witData, "CAT empty stack", SCRIPT_ERR_OK);
 }
@@ -1816,7 +1816,7 @@ BOOST_AUTO_TEST_CASE(cat_dup_test)
     unsigned int maxDupsToCheck = 10;
 
     std::vector<std::vector<unsigned char>> witData;
-    witData.push_back({});
+    witData.emplace_back();
     for (unsigned int elementSize = 1; elementSize <= maxElementSize; elementSize++) {
         std::vector<unsigned char> witVerifyScript;
         // increase the size of stack element by one byte

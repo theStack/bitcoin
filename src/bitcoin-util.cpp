@@ -257,7 +257,7 @@ static int EvalScript(const ArgsManager& argsman, const std::vector<std::string>
 
         for (size_t i = 1; i < args.size(); ++i) {
             if (args[i].size() == 0) {
-                stack.push_back({});
+                stack.emplace_back();
             } else if (IsHex(args[i])) {
                 stack.push_back(ParseHex(args[i]));
             } else {
