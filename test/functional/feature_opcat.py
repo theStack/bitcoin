@@ -39,16 +39,16 @@ from io import BytesIO
 from test_framework.address import script_to_p2sh
 
 DISCOURAGED_ERROR = (
-    "non-mandatory-script-verify-flag (NOPx reserved for soft-fork upgrades)"
+    "mempool-script-verify-flag-failed (NOPx reserved for soft-fork upgrades)"
 )
 STACK_TOO_SHORT_ERROR = (
-    "non-mandatory-script-verify-flag (Operation not valid with the current stack size)"
+    "mempool-script-verify-flag-failed (Operation not valid with the current stack size)"
 )
 DISABLED_OP_CODE = (
-    "mandatory-script-verify-flag-failed (Attempted to use a disabled opcode)"
+    "mempool-script-verify-flag-failed (Attempted to use a disabled opcode)"
 )
 MAX_PUSH_ERROR = (
-    "non-mandatory-script-verify-flag (Push value size limit exceeded)"
+    "mempool-script-verify-flag-failed (Push value size limit exceeded)"
 )
 
 def random_bytes(n):
