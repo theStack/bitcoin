@@ -1554,7 +1554,7 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
     // sanitize comments per BIP-0014, format user agent and check total size
     std::vector<std::string> uacomments;
     if (!args.IsArgSet("-uacomment") && !args.IsArgNegated("-uacomment")) {
-        uacomments.push_back("inquisition");
+        uacomments.emplace_back("inquisition");
     }
     for (const std::string& cmt : args.GetArgs("-uacomment")) {
         if (cmt != SanitizeString(cmt, SAFE_CHARS_UA_COMMENT))
