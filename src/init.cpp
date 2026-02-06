@@ -1354,7 +1354,7 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
     }
 
     // Disallow mainnet/testnet operation
-    if (Params().GetChainType() == ChainType::MAIN || Params().GetChainType() == ChainType::TESTNET) {
+    if (Params().GetChainType() != ChainType::REGTEST && Params().GetChainType() != ChainType::SIGNET) {
         return InitError(Untranslated(strprintf("Selected network '%s' is unsupported for this client, select -regtest or -signet instead.\n", Params().GetChainTypeString())));
     }
 
