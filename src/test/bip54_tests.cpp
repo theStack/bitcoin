@@ -110,11 +110,11 @@ static std::vector<uint8_t> SignInput(const CKey& key, const CScript& spent_scri
 }
 
 /** Verify a transaction input's script against consensus rules. */
-static bool VerifyTxin(const CScript& spent_script, const CMutableTransaction& tx, unsigned idx, std::vector<CTxOut>&& spent_outputs, const CAmount& amount)
+static bool VerifyTxin(const CScript& spent_script, const CMutableTransaction& tx, unsigned idx, std::vector<CTxOut> spent_outputs, const CAmount& amount)
 {
     Assert(idx < tx.vin.size());
     PrecomputedTransactionData txdata;
-    txdata.Init(tx, std::forward<std::vector<CTxOut>>(spent_outputs), /*force=*/true);
+    txdata.Init(tx, std::move(spent_outputs), /*force=*/true);
     const MutableTransactionSignatureChecker checker{&tx, idx, amount, txdata, MissingDataBehavior::ASSERT_FAIL};
     return VerifyScript(tx.vin[idx].scriptSig, spent_script, &tx.vin[idx].scriptWitness, MANDATORY_SCRIPT_VERIFY_FLAGS, checker);
 }
@@ -1019,7 +1019,7 @@ BOOST_AUTO_TEST_CASE(bip54_legacy_sigops)
             sigdata.tr_spenddata = builder.GetSpendData();
             auto spent_outputs{RecordSpent(coins, tx_copy2)};
             Assert(SignSignature(keystore, spk, tx_copy2, idx, value, std::vector<CTxOut>(spent_outputs), SIGHASH_ALL, sigdata));
-            BOOST_REQUIRE(VerifyTxin(spk, tx_copy2, idx, std::move(spent_outputs), value));
+            BOOST_REQUIRE(VerifyTxin(spk, tx_copy2, idx, spent_outputs, value));
 
             CheckWithinBIP54Limits(CTransaction(tx_copy2), coins, test_vectors, "Mixed input types reaching exactly 2500 BIP54-sigops + a Taproot key path spend input");
         }
@@ -1055,7 +1055,7 @@ BOOST_AUTO_TEST_CASE(bip54_legacy_sigops)
             keystore.keys[pubkey.GetID()] = privkey;
             sigdata.tr_spenddata = builder.GetSpendData();
             Assert(SignSignature(keystore, spk, tx_copy2, idx, value, std::vector<CTxOut>(spent_outputs), SIGHASH_ALL, sigdata));
-            BOOST_REQUIRE(VerifyTxin(spk, tx_copy2, idx, std::vector<CTxOut>(spent_outputs), value));
+            BOOST_REQUIRE(VerifyTxin(spk, tx_copy2, idx, spent_outputs, value));
             CheckWithinBIP54Limits(CTransaction(tx_copy2), coins, test_vectors, "Mixed input types reaching exactly 2500 BIP54-sigops + a Taproot script path spend input");
 
             // Spend through the future-version leaf.
@@ -1063,7 +1063,7 @@ BOOST_AUTO_TEST_CASE(bip54_legacy_sigops)
             keystore.keys[pubkey_future.GetID()] = privkey_future;
             sigdata.tr_spenddata = builder.GetSpendData();
             Assert(SignSignature(keystore, spk, tx_copy2, idx, value, std::vector<CTxOut>(spent_outputs), SIGHASH_ALL, sigdata));
-            BOOST_REQUIRE(VerifyTxin(spk, tx_copy2, idx, std::move(spent_outputs), value));
+            BOOST_REQUIRE(VerifyTxin(spk, tx_copy2, idx, spent_outputs, value));
             CheckWithinBIP54Limits(CTransaction(tx_copy2), coins, test_vectors, "Mixed input types reaching exactly 2500 BIP54-sigops + a Taproot script path spend input of a future leaf version");
         }
 
@@ -1343,6 +1343,7 @@ struct TimestampTestCase {
  * The BIP 54 timestamp test vectors are arranged as a tree. This recursively build a list of
  * header-chain test cases from the root of the JSON test vectors.
  */
+// NOLINTNEXTLINE(misc-no-recursion)
 static std::vector<TimestampTestCase> VisitNode(std::vector<CBlockHeader> header_chain, const UniValue& test_node)
 {
     std::vector<TimestampTestCase> test_cases;
@@ -1441,7 +1442,7 @@ BOOST_AUTO_TEST_CASE(bip54_coinbase)
         {
             auto test_setup{TestingSetup{ChainType::MAIN, {.extra_args = {"-vbparams=consensuscleanup:-1:-1"}}}};
             BlockValidationState state;
-            BOOST_CHECK_MESSAGE(AcceptBlocks(*test_setup.m_node.chainman, std::move(blocks), state) == is_valid, comment);
+            BOOST_CHECK_MESSAGE(AcceptBlocks(*test_setup.m_node.chainman, blocks, state) == is_valid, comment);
             if (!is_valid) {
                 const auto reason{state.GetRejectReason()};
                 BOOST_CHECK_MESSAGE(reason == "bad-cb-locktime" || reason == "bad-cb-sequence" || reason == "bad-txns-nonfinal", comment);
