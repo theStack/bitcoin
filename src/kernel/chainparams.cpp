@@ -116,12 +116,43 @@ struct SetupDeployment
 };
 }
 
+void CChainParams::ApplyDeploymentOptions(const DeploymentOptions& opts)
+{
+    for (const auto& [dep, height] : opts.activation_heights) {
+        switch (dep) {
+        case Consensus::BuriedDeployment::DEPLOYMENT_TAPROOT:
+            consensus.TaprootHeight = int{height};
+            break;
+        case Consensus::BuriedDeployment::DEPLOYMENT_SEGWIT:
+            consensus.SegwitHeight = int{height};
+            break;
+        case Consensus::BuriedDeployment::DEPLOYMENT_HEIGHTINCB:
+            consensus.BIP34Height = int{height};
+            break;
+        case Consensus::BuriedDeployment::DEPLOYMENT_DERSIG:
+            consensus.BIP66Height = int{height};
+            break;
+        case Consensus::BuriedDeployment::DEPLOYMENT_CLTV:
+            consensus.BIP65Height = int{height};
+            break;
+        case Consensus::BuriedDeployment::DEPLOYMENT_CSV:
+            consensus.CSVHeight = int{height};
+            break;
+        }
+    }
+
+    for (const auto& [deployment_pos, version_bits_params] : opts.version_bits_parameters) {
+        consensus.vDeployments[deployment_pos].nStartTime = version_bits_params.start_time;
+        consensus.vDeployments[deployment_pos].nTimeout = version_bits_params.timeout;
+    }
+}
+
 /**
  * Main network on which people trade goods and services.
  */
 class CMainParams : public CChainParams {
 public:
-    CMainParams() {
+    CMainParams(const MainNetOptions& opts) {
         m_chain_type = ChainType::MAIN;
         consensus.signet_blocks = false;
         consensus.signet_challenge.clear();
@@ -148,6 +179,8 @@ public:
         for (auto& dep : consensus.vDeployments) {
             dep = SetupDeployment{.activate = 0x30000000, .abandon = 0, .never = true, .period = 2016};
         }
+
+        ApplyDeploymentOptions(opts.dep_opts);
 
         consensus.nMinimumChainWork = uint256{"0000000000000000000000000000000000000000b1f3b93b65b16d035a82be84"};
         consensus.defaultAssumeValid = uint256{"00000000000000000001b658dd1120e82e66d2790811f89ede9742ada3ed6d77"}; // 886157
@@ -246,7 +279,7 @@ public:
  */
 class CTestNetParams : public CChainParams {
 public:
-    CTestNetParams() {
+    CTestNetParams(const TestNetOptions& opts) {
         m_chain_type = ChainType::TESTNET;
         consensus.signet_blocks = false;
         consensus.signet_challenge.clear();
@@ -272,6 +305,8 @@ public:
         for (auto& dep : consensus.vDeployments) {
             dep = SetupDeployment{.activate = 0x30000000, .abandon = 0, .never = true, .period = 2016};
         }
+
+        ApplyDeploymentOptions(opts.dep_opts);
 
         consensus.nMinimumChainWork = uint256{"0000000000000000000000000000000000000000000015f5e0c9f13455b0eb17"};
         consensus.defaultAssumeValid = uint256{"00000000000003fc7967410ba2d0a8a8d50daedc318d43e8baf1a9782c236a57"}; // 3974606
@@ -341,7 +376,7 @@ public:
  */
 class CTestNet4Params : public CChainParams {
 public:
-    CTestNet4Params() {
+    CTestNet4Params(const TestNetOptions& opts) {
         m_chain_type = ChainType::TESTNET4;
         consensus.signet_blocks = false;
         consensus.signet_challenge.clear();
@@ -364,6 +399,8 @@ public:
         for (auto& dep : consensus.vDeployments) {
             dep = SetupDeployment{.activate = 0x30000000, .abandon = 0, .never = true, .period = 2016};
         }
+
+        ApplyDeploymentOptions(opts.dep_opts);
 
         consensus.nMinimumChainWork = uint256{"0000000000000000000000000000000000000000000001d6dce8651b6094e4c1"};
         consensus.defaultAssumeValid = uint256{"0000000000003ed4f08dbdf6f7d6b271a6bcffce25675cb40aa9fa43179a89f3"}; // 72600
@@ -495,6 +532,8 @@ public:
         consensus.vDeployments[Consensus::DEPLOYMENT_TESTDUMMY] = SetupDeployment{.activate = 0x30000000, .abandon = 0, .never = true, .period = 432};
         INQ_DEPLOYMENTS_SIGNET
 
+        ApplyDeploymentOptions(options.dep_opts);
+
         RenounceDeployments(options.renounce, consensus.vDeployments);
 
         // message start is defined as the first 4 bytes of the sha256d of the block script
@@ -577,33 +616,7 @@ public:
         m_assumed_blockchain_size = 0;
         m_assumed_chain_state_size = 0;
 
-        for (const auto& [dep, height] : opts.activation_heights) {
-            switch (dep) {
-            case Consensus::BuriedDeployment::DEPLOYMENT_TAPROOT:
-                consensus.TaprootHeight = int{height};
-                break;
-            case Consensus::BuriedDeployment::DEPLOYMENT_SEGWIT:
-                consensus.SegwitHeight = int{height};
-                break;
-            case Consensus::BuriedDeployment::DEPLOYMENT_HEIGHTINCB:
-                consensus.BIP34Height = int{height};
-                break;
-            case Consensus::BuriedDeployment::DEPLOYMENT_DERSIG:
-                consensus.BIP66Height = int{height};
-                break;
-            case Consensus::BuriedDeployment::DEPLOYMENT_CLTV:
-                consensus.BIP65Height = int{height};
-                break;
-            case Consensus::BuriedDeployment::DEPLOYMENT_CSV:
-                consensus.CSVHeight = int{height};
-                break;
-            }
-        }
-
-        for (const auto& [deployment_pos, version_bits_params] : opts.version_bits_parameters) {
-            consensus.vDeployments[deployment_pos].nStartTime = version_bits_params.start_time;
-            consensus.vDeployments[deployment_pos].nTimeout = version_bits_params.timeout;
-        }
+        ApplyDeploymentOptions(opts.dep_opts);
 
         RenounceDeployments(opts.renounce, consensus.vDeployments);
 
@@ -683,19 +696,19 @@ std::unique_ptr<const CChainParams> CChainParams::RegTest(const RegTestOptions& 
     return std::make_unique<const CRegTestParams>(options);
 }
 
-std::unique_ptr<const CChainParams> CChainParams::Main()
+std::unique_ptr<const CChainParams> CChainParams::Main(const MainNetOptions& options)
 {
-    return std::make_unique<const CMainParams>();
+    return std::make_unique<const CMainParams>(options);
 }
 
-std::unique_ptr<const CChainParams> CChainParams::TestNet()
+std::unique_ptr<const CChainParams> CChainParams::TestNet(const TestNetOptions& options)
 {
-    return std::make_unique<const CTestNetParams>();
+    return std::make_unique<const CTestNetParams>(options);
 }
 
-std::unique_ptr<const CChainParams> CChainParams::TestNet4()
+std::unique_ptr<const CChainParams> CChainParams::TestNet4(const TestNetOptions& options)
 {
-    return std::make_unique<const CTestNet4Params>();
+    return std::make_unique<const CTestNet4Params>(options);
 }
 
 std::vector<int> CChainParams::GetAvailableSnapshotHeights() const

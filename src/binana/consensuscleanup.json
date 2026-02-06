@@ -1,0 +1,7 @@
+{
+    "binana": [2025, 1, 0],
+    "deployment": "CONSENSUSCLEANUP",
+    "scriptverify": false,
+    "scriptverify_discourage": false,
+    "opcodes": {}
+}
