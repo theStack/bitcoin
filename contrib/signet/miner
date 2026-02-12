@@ -332,7 +332,13 @@ class Generate:
 
         return tmpl
 
-    def mine(self, bcli, wallets, grind_cmd, tmpl, reward_spk, poolid):
+    def mine(self, bcli, wallets, grind_cmd, tmpl, reward_spk, poolid, override_txs):
+        if override_txs is not None:
+            tmpl["transactions"] = []  # TODO: could keep them if there is enough block space left
+            for override_tx in override_txs:
+                # TODO: provide other fields as well
+                tmpl["transactions"].append({"data": override_tx})
+
         psbt = generate_psbt(tmpl, reward_spk, blocktime=self.mine_time, poolid=poolid)
         input_stream = os.linesep.join([psbt, "true", "ALL"]).encode('utf8')
         if wallets:
@@ -416,6 +422,21 @@ def do_generate(args):
     else:
         prefer_cli = None
 
+    if args.custom_txs_file is not None:
+        if max_blocks != 1:
+            logging.error("--custom-txs-file is only allowed if a single block is mined")
+            return 1
+        override_txs = []
+        with open(args.custom_txs_file, 'r') as f:
+            for line in f:
+                line = line.strip()
+                if line.startswith('#'):  # skip comment lines
+                    continue
+                # TODO: sanity check input (deserialize to CTransaction?) to error early
+                override_txs.append(line)
+    else:
+        override_txs = None
+
     poolid = get_poolid(args)
     prefer_poolid = get_prefer_poolid(args)
 
@@ -479,7 +500,7 @@ def do_generate(args):
                 tmpl = None
             if tmpl is not None:
                 logging.debug("Preferred GBT template: %s", tmpl)
-                block = gen.mine(args.bcli, wallets, args.grind_cmd, tmpl, reward_spk, poolid=prefer_poolid)
+                block = gen.mine(args.bcli, wallets, args.grind_cmd, tmpl, reward_spk, poolid=prefer_poolid, override_txs=override_txs)
                 if block is None:
                     logging.warning("Unable to mine preferred template")
                 else:
@@ -497,7 +518,7 @@ def do_generate(args):
                 continue
 
             logging.debug("GBT template: %s", tmpl)
-            block = gen.mine(args.bcli, wallets, args.grind_cmd, tmpl, reward_spk, poolid=poolid)
+            block = gen.mine(args.bcli, wallets, args.grind_cmd, tmpl, reward_spk, poolid=poolid, override_txs=override_txs)
             if block is None:
                 logging.error("Unable to mine template")
                 return 1
@@ -595,6 +616,7 @@ def main():
     generate.add_argument("--max-interval", default=1800, type=int, help="Maximum interblock interval (seconds)")
     generate.add_argument("--wallets", default=None, type=str, help="Wallets used for signing, separated by commas")
     generate.add_argument("--nversion", default=None, type=str, help="Override block nVersion (specify as hex)")
+    generate.add_argument("--custom-txs-file", default=None, type=str, help="File with custom txs to override template (one tx per line, in hex)")
 
     calibrate = cmds.add_parser("calibrate", help="Calibrate difficulty")
     calibrate.set_defaults(fn=do_calibrate)
