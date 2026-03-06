@@ -13,6 +13,7 @@
 #include <protocol.h>
 #include <script/script.h>
 #include <serialize.h>
+#include <support/allocators/secure.h>
 #include <sync.h>
 #include <util/bip32.h>
 #include <util/check.h>
@@ -117,7 +118,7 @@ bool WalletBatch::WriteKey(const CPubKey& vchPubKey, const CPrivKey& vchPrivKey,
     }
 
     // hash pubkey/privkey to accelerate wallet load
-    std::vector<unsigned char> vchKey;
+    std::vector<unsigned char, secure_allocator<unsigned char>> vchKey;
     vchKey.reserve(vchPubKey.size() + vchPrivKey.size());
     vchKey.insert(vchKey.end(), vchPubKey.begin(), vchPubKey.end());
     vchKey.insert(vchKey.end(), vchPrivKey.begin(), vchPrivKey.end());
@@ -220,7 +221,7 @@ bool WalletBatch::EraseActiveScriptPubKeyMan(uint8_t type, bool internal)
 bool WalletBatch::WriteDescriptorKey(const uint256& desc_id, const CPubKey& pubkey, const CPrivKey& privkey)
 {
     // hash pubkey/privkey to accelerate wallet load
-    std::vector<unsigned char> key;
+    std::vector<unsigned char, secure_allocator<unsigned char>> key;
     key.reserve(pubkey.size() + privkey.size());
     key.insert(key.end(), pubkey.begin(), pubkey.end());
     key.insert(key.end(), privkey.begin(), privkey.end());
@@ -328,7 +329,7 @@ bool LoadKey(CWallet* pwallet, DataStream& ssKey, DataStream& ssValue, std::stri
         if (!hash.IsNull())
         {
             // hash pubkey/privkey to accelerate wallet load
-            std::vector<unsigned char> vchKey;
+            std::vector<unsigned char, secure_allocator<unsigned char>> vchKey;
             vchKey.reserve(vchPubKey.size() + pkey.size());
             vchKey.insert(vchKey.end(), vchPubKey.begin(), vchPubKey.end());
             vchKey.insert(vchKey.end(), pkey.begin(), pkey.end());
@@ -875,7 +876,7 @@ static DBErrors LoadDescriptorWalletRecords(CWallet* pwallet, DatabaseBatch& bat
             value >> hash;
 
             // hash pubkey/privkey to accelerate wallet load
-            std::vector<unsigned char> to_hash;
+            std::vector<unsigned char, secure_allocator<unsigned char>> to_hash;
             to_hash.reserve(pubkey.size() + pkey.size());
             to_hash.insert(to_hash.end(), pubkey.begin(), pubkey.end());
             to_hash.insert(to_hash.end(), pkey.begin(), pkey.end());
