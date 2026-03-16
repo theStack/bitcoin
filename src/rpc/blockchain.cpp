@@ -3284,6 +3284,7 @@ UniValue WriteUTXOSnapshot(
         for (const auto& [n, coin] : coins) {
             WriteCompactSize(afile, n);
             afile << coin;
+            afile << uint32_t{coin.out.scriptPubKey.GetSigOpCount(true)};
             ++written_coins_count;
         }
     };

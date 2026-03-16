@@ -79,18 +79,31 @@ def decompress_script(f):
     """Equivalent of `DecompressScript()` (see compressor module)."""
     size = read_varint(f)  # sizes 0-5 encode compressed script types
     if size == 0:  # P2PKH
-        return bytes([0x76, 0xa9, 20]) + f.read(20) + bytes([0x88, 0xac])
+        _ = bytes([0x76, 0xa9, 20]) + f.read(20) + bytes([0x88, 0xac])
+        return b""
     elif size == 1:  # P2SH
-        return bytes([0xa9, 20]) + f.read(20) + bytes([0x87])
+        _ = bytes([0xa9, 20]) + f.read(20) + bytes([0x87])
+        return b""
     elif size in (2, 3):  # P2PK (compressed)
-        return bytes([33, size]) + f.read(32) + bytes([0xac])
+        _ = bytes([33, size]) + f.read(32) + bytes([0xac])
+        return b""
     elif size in (4, 5):  # P2PK (uncompressed)
         compressed_pubkey = bytes([size - 2]) + f.read(32)
-        return bytes([65]) + decompress_pubkey(compressed_pubkey) + bytes([0xac])
+        _ = bytes([65]) + decompress_pubkey(compressed_pubkey) + bytes([0xac])
+        return b""
     else:  # others (bare multisig, segwit etc.)
         size -= 6
         assert size <= 10000, f"too long script with size {size}"
-        return f.read(size)
+        #return f.read(size)
+        spk = f.read(size)
+        if len(spk) == 22 and spk[0] == 0x00 and spk[1] == 0x14: # p2wpkh
+            return b""
+        elif len(spk) == 34 and spk[0] == 0x00 and spk[1] == 0x20: # p2wsh
+            return b""
+        elif len(spk) == 34 and spk[0] == 0x51 and spk[1] == 0x20: # p2tr
+            return b""
+
+        return spk
 
 
 def decompress_pubkey(compressed_pubkey):
@@ -135,7 +148,7 @@ def main():
     txid_fmt = "TEXT" if txid_hex else "BLOB"
     spk_fmt = "TEXT" if spk_hex else "BLOB"
     con = sqlite3.connect(args.outfile)
-    con.execute(f"CREATE TABLE utxos(txid {txid_fmt}, vout INT, value INT, coinbase INT, height INT, scriptpubkey {spk_fmt})")
+    con.execute(f"CREATE TABLE utxos(txid {txid_fmt}, vout INT, value INT, coinbase INT, height INT, sigops INT, scriptpubkey {spk_fmt})")
 
     # read metadata (magic bytes, version, network magic, block hash, UTXO count)
     f = open(args.infile, 'rb')
@@ -172,12 +185,15 @@ def main():
         height = code >> 1
         is_coinbase = code & 1
         amount = decompress_amount(read_varint(f))
+        #print(f"txid: {prevout_hash[::-1].hex()}, vout = {prevout_index}, height = {height}...")
         scriptpubkey = decompress_script(f)
+        sigops = int.from_bytes(f.read(4), 'little')
 
         scriptpubkey_write = scriptpubkey.hex() if spk_hex else scriptpubkey
         txid_write = prevout_hash[::-1] if txid_reverse else prevout_hash
         txid_write = txid_write.hex() if txid_hex else txid_write
-        write_batch.append((txid_write, prevout_index, amount, is_coinbase, height, scriptpubkey_write))
+        if len(scriptpubkey_write) > 0:
+            write_batch.append((txid_write, prevout_index, amount, is_coinbase, height, sigops, scriptpubkey_write))
         if height > max_height:
             max_height = height
         coins_per_hash_left -= 1
@@ -190,7 +206,7 @@ def main():
 
         if coin_idx % (16*1024) == 0 or coin_idx == num_utxos:
             # write utxo batch to database
-            con.executemany("INSERT INTO utxos VALUES(?, ?, ?, ?, ?, ?)", write_batch)
+            con.executemany("INSERT INTO utxos VALUES(?, ?, ?, ?, ?, ?, ?)", write_batch)
             con.commit()
             write_batch.clear()
 
