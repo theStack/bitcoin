@@ -64,6 +64,7 @@ struct secp256k1_context_struct {
     secp256k1_callback illegal_callback;
     secp256k1_callback error_callback;
     int declassify;
+    int silentpayments_disable_k_max_limit;
 };
 
 static const secp256k1_context secp256k1_context_static_ = {
@@ -71,6 +72,7 @@ static const secp256k1_context secp256k1_context_static_ = {
     { secp256k1_sha256_transform },
     { secp256k1_default_illegal_callback_fn, 0 },
     { secp256k1_default_error_callback_fn, 0 },
+    0,
     0
 };
 const secp256k1_context * const secp256k1_context_static = &secp256k1_context_static_;
@@ -137,6 +139,7 @@ secp256k1_context* secp256k1_context_preallocated_create(void* prealloc, unsigne
     VERIFY_CHECK((flags & SECP256K1_FLAGS_TYPE_MASK) == SECP256K1_FLAGS_TYPE_CONTEXT);
     secp256k1_ecmult_gen_context_build(&ret->ecmult_gen_ctx, &ret->hash_ctx);
     ret->declassify = !!(flags & SECP256K1_FLAGS_BIT_CONTEXT_DECLASSIFY);
+    ret->silentpayments_disable_k_max_limit = 0;
 
     return ret;
 }

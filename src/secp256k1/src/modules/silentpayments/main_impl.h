@@ -619,6 +619,7 @@ int secp256k1_silentpayments_recipient_scan_outputs(
     /* Don't look further than the per-group recipient limit, in order to avoid quadratic scaling issues. */
     k_max = (n_tx_outputs < SECP256K1_SILENTPAYMENTS_RECIPIENT_GROUP_LIMIT) ?
              n_tx_outputs : SECP256K1_SILENTPAYMENTS_RECIPIENT_GROUP_LIMIT;
+    if (ctx->silentpayments_disable_k_max_limit) k_max = n_tx_outputs;
     for (k = 0; k < k_max; k++) {
         secp256k1_scalar t_k_scalar;
         secp256k1_xonly_pubkey unlabeled_output_xonly;
@@ -761,6 +762,10 @@ int secp256k1_silentpayments_recipient_scan_outputs(
     /* Leaking the shared_secret would break indistinguishability of the transaction, so clear it. */
     secp256k1_memclear_explicit(shared_secret, sizeof(shared_secret));
     return 1;
+}
+
+void secp256k1_silentpayments_disable_k_max_limit(secp256k1_context *ctx, int flag) {
+    ctx->silentpayments_disable_k_max_limit = flag;
 }
 
 #endif
