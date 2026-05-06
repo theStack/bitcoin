@@ -390,6 +390,21 @@ if(BUILD_UTIL)
   install_binary_component(bitcoin-util HAS_MANPAGE)
 endif()
 
+# UTXO to SQLite converter tool
+if(ENABLE_WALLET AND BUILD_UTIL)
+  add_executable(bitcoin-utxo-to-sqlite bitcoin-utxo-to-sqlite.cpp)
+  add_windows_resources(bitcoin-utxo-to-sqlite bitcoin-utxo-to-sqlite-res.rc)
+  add_windows_application_manifest(bitcoin-utxo-to-sqlite)
+  target_link_libraries(bitcoin-utxo-to-sqlite
+    PRIVATE
+      core_interface
+      bitcoin_common
+      bitcoin_util
+      SQLite3::SQLite3
+  )
+  install_binary_component(bitcoin-utxo-to-sqlite INTERNAL)
+endif()
+
 
 if(BUILD_GUI)
   add_subdirectory(qt)

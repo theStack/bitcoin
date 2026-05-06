@@ -330,6 +330,7 @@ def get_binary_paths(config):
         "bitcoin-tx": "BITCOINTX",
         "bitcoin-chainstate": "BITCOINCHAINSTATE",
         "bitcoin-wallet": "BITCOINWALLET",
+        "bitcoin-utxo-to-sqlite": "BITCOINUTXO2SQLITE",
     }
     # Set paths to bitcoin core binaries allowing overrides with environment
     # variables.

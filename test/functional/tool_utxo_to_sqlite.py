@@ -11,7 +11,6 @@ try:
 except ImportError:
     pass
 import subprocess
-import sys
 
 from test_framework.key import ECKey
 from test_framework.messages import (
@@ -63,7 +62,6 @@ def calculate_muhash_from_sqlite_utxos(filename, txid_format, spk_format):
             case "raw":
                 assert type(spk) is bytes
                 spk_bytes = spk
-
         # serialize UTXO for MuHash (see function `TxOutSer` in the  coinstats module)
         utxo_ser = COutPoint(uint256_from_str(txid_bytes), vout).serialize()
         utxo_ser += (height * 2 + coinbase).to_bytes(4, 'little')
@@ -81,6 +79,7 @@ class UtxoToSqliteTest(BitcoinTestFramework):
 
     def skip_test_if_missing_module(self):
         self.skip_if_no_py_sqlite3()
+        self.skip_if_no_wallet()  # utxo-to-sqlite is only built if wallet is enabled (due to SQLite3 dependency)
 
     def run_test(self):
         node = self.nodes[0]
@@ -122,13 +121,12 @@ class UtxoToSqliteTest(BitcoinTestFramework):
         node.dumptxoutset(input_filename, "latest")
 
         for i, (txid_format, spk_format) in enumerate(product(["hex", "raw", "rawle"], ["hex", "raw"])):
-            self.log.info(f'Test utxo-to-sqlite script using txid format "{txid_format}" and spk format "{spk_format}" ({i+1})')
+            self.log.info(f'Test bitcoin-utxo-to-sqlite using txid format "{txid_format}" and spk format "{spk_format}" ({i+1})')
             self.log.info('-> Convert UTXO set from compact-serialized format to sqlite format')
             output_filename = os.path.join(self.options.tmpdir, f"utxos_{i+1}.sqlite")
-            base_dir = self.config["environment"]["SRCDIR"]
-            utxo_to_sqlite_path = os.path.join(base_dir, "contrib", "utxo-tools", "utxo_to_sqlite.py")
+            utxo_to_sqlite_bin = self.get_binaries().paths.bitcoinutxo2sqlite
             arguments = [input_filename, output_filename, f'--txid={txid_format}', f'--spk={spk_format}']
-            subprocess.run([sys.executable, utxo_to_sqlite_path] + arguments, check=True, stderr=subprocess.STDOUT)
+            subprocess.run([utxo_to_sqlite_bin] + arguments, check=True, stderr=subprocess.STDOUT)
 
             self.log.info('-> Verify that both UTXO sets match by comparing their MuHash')
             muhash_sqlite = calculate_muhash_from_sqlite_utxos(output_filename, txid_format, spk_format)
@@ -141,8 +139,9 @@ class UtxoToSqliteTest(BitcoinTestFramework):
             fifo_filename = os.path.join(self.options.tmpdir, "utxos.fifo")
             os.mkfifo(fifo_filename)
             output_direct_filename = os.path.join(self.options.tmpdir, "utxos_direct.sqlite")
-            p = subprocess.Popen([sys.executable, utxo_to_sqlite_path, fifo_filename, output_direct_filename],
-                                 stderr=subprocess.STDOUT)
+            utxo_to_sqlite_bin = self.get_binaries().paths.bitcoinutxo2sqlite
+            p = subprocess.Popen([utxo_to_sqlite_bin, fifo_filename, output_direct_filename],
+                                 stderr=subprocess.PIPE)
             target_height = node.getblockcount() - 10
             node.dumptxoutset(fifo_filename, "rollback", {"rollback": target_height})
             p.wait(timeout=10)
