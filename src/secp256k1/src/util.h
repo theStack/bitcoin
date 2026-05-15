@@ -119,6 +119,11 @@ static const secp256k1_callback default_error_callback = {
     NULL
 };
 
+#if SECP256K1_GNUC_PREREQ(3, 0)
+#define SECP256K1_ALWAYS_INLINE SECP256K1_INLINE __attribute__((always_inline))
+#else
+#define SECP256K1_ALWAYS_INLINE SECP256K1_INLINE
+#endif
 
 #ifdef DETERMINISTIC
 #define TEST_FAILURE(msg) do { \

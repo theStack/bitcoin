@@ -338,7 +338,7 @@ SECP256K1_INLINE static void secp256k1_fe_impl_add(secp256k1_fe *r, const secp25
     r->n[4] += a->n[4];
 }
 
-SECP256K1_INLINE static void secp256k1_fe_impl_mul(secp256k1_fe *r, const secp256k1_fe *a, const secp256k1_fe * SECP256K1_RESTRICT b) {
+SECP256K1_ALWAYS_INLINE static void secp256k1_fe_impl_mul(secp256k1_fe *r, const secp256k1_fe *a, const secp256k1_fe * SECP256K1_RESTRICT b) {
     secp256k1_fe_mul_inner(r->n, a->n, b->n);
 }
 
