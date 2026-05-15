@@ -570,7 +570,7 @@ int secp256k1_silentpayments_recipient_scan_outputs(
     const unsigned char *scan_key32,
     const secp256k1_silentpayments_prevouts_summary *prevouts_summary,
     const secp256k1_pubkey *unlabeled_spend_pubkey,
-    const secp256k1_silentpayments_label_lookup label_lookup,
+    secp256k1_silentpayments_label_lookup label_lookup,
     const void *label_context
 ) {
     secp256k1_scalar scan_key_scalar;
