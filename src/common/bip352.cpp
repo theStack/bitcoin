@@ -244,23 +244,22 @@ std::vector<secp256k1_xonly_pubkey> CreateOutputs(
     return generated_outputs;
 }
 
-std::optional<std::map<size_t, WitnessV1Taproot>> GenerateSilentPaymentsTaprootDestinations(const std::map<size_t, V0SilentPaymentsDestination>& sp_dests, const std::vector<CKey>& plain_keys, const std::vector<KeyPair>& taproot_keys, const COutPoint& smallest_outpoint)
+std::optional<std::vector<WitnessV1Taproot>> GenerateSilentPaymentsTaprootDestinations(const std::vector<V0SilentPaymentsDestination>& sp_dests, const std::vector<CKey>& plain_keys, const std::vector<KeyPair>& taproot_keys, const COutPoint& smallest_outpoint)
 {
     if (sp_dests.empty()) return {};
 
     bool ret;
-    std::map<size_t, WitnessV1Taproot> tr_dests;
+    std::vector<WitnessV1Taproot> tr_dests{sp_dests.size()};
     std::vector<V0SilentPaymentsDestination> recipients;
     recipients.reserve(sp_dests.size());
-    for (const auto& [i, addr] : sp_dests) {
-        tr_dests.emplace(i, WitnessV1Taproot());
+    for (const auto& addr : sp_dests) {
         recipients.push_back(addr);
     }
     std::vector<secp256k1_xonly_pubkey> outputs = CreateOutputs(recipients, plain_keys, taproot_keys, smallest_outpoint);
     // This will only fail if the inputs were maliciously crafted to sum to zero
     if (outputs.empty()) return std::nullopt;
     size_t output_i{0};
-    for (const auto& [i, addr] : sp_dests) {
+    for (int i = 0; i < sp_dests.size(); i++) {
         unsigned char xonly_pubkey_bytes[32];
         ret = secp256k1_xonly_pubkey_serialize(secp256k1_context_static, xonly_pubkey_bytes, &outputs[output_i]);
         assert(ret);

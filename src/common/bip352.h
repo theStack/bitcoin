@@ -86,9 +86,9 @@ std::optional<PubKey> GetPubKeyFromInput(const CTxIn& txin, const CScript& spk);
  * @param plain_keys                          The private keys for non-taproot inputs.
  * @param taproot_keys                        The keypairs for taproot inputs.
  * @param smallest_outpoint                   The smallest_outpoint from the transaction inputs.
- * @return std::map<size_t, WitnessV1Taproot> The generated silent payments taproot destinations.
+ * @return std::vector<WitnessV1Taproot>      The generated silent payments taproot destinations.
  */
-std::optional<std::map<size_t, WitnessV1Taproot>> GenerateSilentPaymentsTaprootDestinations(const std::map<size_t, V0SilentPaymentsDestination>& sp_dests, const std::vector<CKey>& plain_keys, const std::vector<KeyPair>& taproot_keys, const COutPoint& smallest_outpoint);
+std::optional<std::vector<WitnessV1Taproot>> GenerateSilentPaymentsTaprootDestinations(const std::vector<V0SilentPaymentsDestination>& sp_dests, const std::vector<CKey>& plain_keys, const std::vector<KeyPair>& taproot_keys, const COutPoint& smallest_outpoint);
 
 /**
  * @brief Create a silent payments label pair.
