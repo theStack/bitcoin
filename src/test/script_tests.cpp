@@ -1681,7 +1681,7 @@ BOOST_AUTO_TEST_CASE(bip341_keypath_test_vectors)
             // Sign and verify signature.
             FlatSigningProvider provider;
             provider.keys[key.GetPubKey().GetID()] = key;
-            MutableTransactionSignatureCreator creator(tx, txinpos, utxos[txinpos].nValue, &txdata, {.sighash_type = hashtype});
+            MutableTransactionSignatureCreator creator(tx, txinpos, utxos[txinpos].nValue, &txdata, {.sighash_type = hashtype, .add_aux_rand = false});
             std::vector<unsigned char> signature;
             BOOST_CHECK(creator.CreateSchnorrSig(provider, signature, pubkey, nullptr, &merkle_root, SigVersion::TAPROOT));
             BOOST_CHECK_EQUAL(HexStr(signature), input["expected"]["witness"][0].get_str());
@@ -1699,6 +1699,15 @@ BOOST_AUTO_TEST_CASE(bip341_keypath_test_vectors)
 
             // To verify the sigmsg, hash the expected sigmsg, and compare it with the (expected) sighash.
             BOOST_CHECK_EQUAL(HexStr((HashWriter{HASHER_TAPSIGHASH} << std::span<const uint8_t>{ParseHex(input["intermediary"]["sigMsg"].get_str())}).GetSHA256()), input["intermediary"]["sigHash"].get_str());
+
+            // Signing with auxiliary randomness (the default) yields a different, but still valid signature.
+            MutableTransactionSignatureCreator aux_rand_creator(tx, txinpos, utxos[txinpos].nValue, &txdata, {.sighash_type = hashtype});
+            std::vector<unsigned char> aux_rand_signature;
+            BOOST_CHECK(aux_rand_creator.CreateSchnorrSig(provider, aux_rand_signature, pubkey, nullptr, &merkle_root, SigVersion::TAPROOT));
+            BOOST_CHECK(aux_rand_signature != signature);
+            const auto output_key{pubkey.CreateTapTweak(merkle_root.IsNull() ? nullptr : &merkle_root)};
+            BOOST_REQUIRE(output_key.has_value());
+            BOOST_CHECK(output_key->first.VerifySchnorr(sighash, std::span{aux_rand_signature}.first(64)));
         }
     }
 }

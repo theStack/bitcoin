@@ -33,6 +33,9 @@ struct SignatureData;
 
 struct SignOptions {
     int sighash_type{SIGHASH_DEFAULT};
+    /** Whether to provide auxiliary randomness when creating Schnorr signatures (see BIP-340).
+     *  Only disable this if deterministic signatures are needed, e.g. for testing purposes. */
+    bool add_aux_rand{true};
 };
 
 /** Interface for signature creators. */

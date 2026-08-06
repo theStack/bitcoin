@@ -14,6 +14,7 @@
 #include <policy/policy.h>
 #include <prevector.h>
 #include <primitives/transaction.h>
+#include <random.h>
 #include <script/keyorigin.h>
 #include <script/miniscript.h>
 #include <script/script.h>
@@ -109,8 +110,9 @@ bool MutableTransactionSignatureCreator::CreateSchnorrSig(const SigningProvider&
     if (!hash.has_value()) return false;
 
     sig.resize(64);
-    // Use uint256{} as aux_rnd for now.
-    if (!key.SignSchnorr(*hash, sig, merkle_root, {})) return false;
+    uint256 aux_rand{};
+    if (m_options.add_aux_rand) GetStrongRandBytes(aux_rand);
+    if (!key.SignSchnorr(*hash, sig, merkle_root, aux_rand)) return false;
     if (m_options.sighash_type) sig.push_back(m_options.sighash_type);
     return true;
 }
